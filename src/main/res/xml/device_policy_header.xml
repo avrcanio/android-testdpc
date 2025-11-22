@@ -36,6 +36,12 @@
         testdpc:delegation="delegation-cert-install"
         testdpc:permission="android.permission.MANAGE_DEVICE_POLICY_CERTIFICATES"
         testdpc:minSdkVersion="S" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="install_tailscale"
+        android:title="@string/install_tailscale_title"
+        android:summary="@string/install_tailscale_summary"
+        testdpc:admin="deviceOwner"
+        testdpc:minSdkVersion="M" />
 
     <PreferenceCategory android:title="@string/accessibility_title">
         <com.afwsamples.testdpc.common.preference.DpcPreference

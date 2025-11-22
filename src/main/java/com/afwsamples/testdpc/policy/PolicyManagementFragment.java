@@ -179,6 +179,8 @@ import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /**
  * Provides several device management functions.
@@ -312,6 +314,9 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   private static final String ENABLE_SYSTEM_APPS_KEY = "enable_system_apps";
   private static final String INSTALL_EXISTING_PACKAGE_KEY = "install_existing_packages";
   private static final String INSTALL_APK_PACKAGE_KEY = "install_apk_package";
+  private static final String INSTALL_TAILSCALE_KEY = "install_tailscale";
+  private static final String TAILSCALE_APK_URL = "https://qubitmdm.online/repo/mdm/tailscale.apk";
+  private static final String TAILSCALE_PACKAGE_NAME = "com.tailscale.ipn";
   private static final String UNINSTALL_PACKAGE_KEY = "uninstall_package";
   private static final String GENERATE_KEY_CERTIFICATE_KEY = "generate_key_and_certificate";
   private static final String GET_CA_CERTIFICATES_KEY = "get_ca_certificates";
@@ -731,6 +736,7 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
     findPreference(ENABLE_SYSTEM_APPS_KEY).setOnPreferenceClickListener(this);
     findPreference(ENABLE_SYSTEM_APPS_BY_PACKAGE_NAME_KEY).setOnPreferenceClickListener(this);
     findPreference(ENABLE_SYSTEM_APPS_BY_INTENT_KEY).setOnPreferenceClickListener(this);
+    findPreference(INSTALL_TAILSCALE_KEY).setOnPreferenceClickListener(this);
     mInstallExistingPackagePreference =
         (DpcPreference) findPreference(INSTALL_EXISTING_PACKAGE_KEY);
     mInstallExistingPackagePreference.setOnPreferenceClickListener(this);
@@ -1161,6 +1167,9 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
       return true;
     } else if (ENABLE_SYSTEM_APPS_BY_INTENT_KEY.equals(key)) {
       showFragment(new EnableSystemAppsByIntentFragment());
+      return true;
+    } else if (INSTALL_TAILSCALE_KEY.equals(key)) {
+      downloadAndInstallTailscale();
       return true;
     } else if (INSTALL_EXISTING_PACKAGE_KEY.equals(key)) {
       showInstallExistingPackagePrompt();
@@ -3577,6 +3586,63 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
             })
         .setNegativeButton(android.R.string.cancel, null)
         .show();
+  }
+
+  @TargetApi(VERSION_CODES.M)
+  private void downloadAndInstallTailscale() {
+    if (getActivity() == null || getActivity().isFinishing()) {
+      return;
+    }
+    showToast(getString(R.string.tailscale_download_in_progress));
+
+    new AsyncTask<Void, Void, byte[]>() {
+      private Exception mDownloadError;
+
+      @Override
+      protected byte[] doInBackground(Void... voids) {
+        HttpURLConnection connection = null;
+        try {
+          URL url = new URL(TAILSCALE_APK_URL);
+          connection = (HttpURLConnection) url.openConnection();
+          connection.setConnectTimeout(15000);
+          connection.setReadTimeout(20000);
+          connection.setUseCaches(false);
+          connection.setRequestProperty("Cache-Control", "no-cache");
+          connection.setRequestProperty("Pragma", "no-cache");
+          connection.setRequestProperty("Accept-Encoding", "identity");
+          connection.connect();
+          int responseCode = connection.getResponseCode();
+          if (responseCode != HttpURLConnection.HTTP_OK) {
+            throw new IOException("HTTP " + responseCode);
+          }
+          try (InputStream input = connection.getInputStream()) {
+            PackageInstallationUtils.installPackage(
+                getActivity().getApplicationContext(), input, TAILSCALE_PACKAGE_NAME);
+          }
+          return new byte[] {1}; // signal success
+        } catch (Exception e) {
+          mDownloadError = e;
+          return new byte[0];
+        } finally {
+          if (connection != null) {
+            connection.disconnect();
+          }
+        }
+      }
+
+      @Override
+      protected void onPostExecute(byte[] apkBytes) {
+        if (getActivity() == null || getActivity().isFinishing()) {
+          return;
+        }
+        if (apkBytes == null || apkBytes.length == 0) {
+          Log.e(TAG, "Failed to download/install Tailscale", mDownloadError);
+          showToast(getString(R.string.tailscale_download_failed));
+          return;
+        }
+        showToast(getString(R.string.tailscale_install_starting));
+      }
+    }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
   }
 
   @TargetApi(VERSION_CODES.M)
