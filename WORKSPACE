@@ -100,5 +100,9 @@ http_archive(
         "ed -s main/java/com/google/android/setupcompat/logging/ScreenKey.java <<<$',s/Creator<>/Creator<ScreenKey>/g\nw'",
         "ed -s main/java/com/google/android/setupcompat/logging/SetupMetric.java <<<$',s/Creator<>/Creator<SetupMetric>/g\nw'",
     ],
+    patch_cmds_win = [
+        "powershell -Command \"(Get-Content main/java/com/google/android/setupcompat/logging/ScreenKey.java) -replace 'Creator<>','Creator<ScreenKey>' | Set-Content main/java/com/google/android/setupcompat/logging/ScreenKey.java\"",
+        "powershell -Command \"(Get-Content main/java/com/google/android/setupcompat/logging/SetupMetric.java) -replace 'Creator<>','Creator<SetupMetric>' | Set-Content main/java/com/google/android/setupcompat/logging/SetupMetric.java\"",
+    ],
     url = "https://android.googlesource.com/platform/external/setupcompat/+archive/2ce41c8f4de550b5186233cec0a722dd0ffd9a84.tar.gz",
 )
