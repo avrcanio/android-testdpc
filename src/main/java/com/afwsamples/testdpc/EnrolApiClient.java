@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
+import com.afwsamples.testdpc.common.Util;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -12,8 +13,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.cert.Certificate;
+import android.os.Build;
 import org.json.JSONObject;
 import javax.net.ssl.HttpsURLConnection;
+import com.afwsamples.testdpc.EnrolState;
 
 /** Fire-and-forget client that posts the saved enrol token to the Qubit endpoint. */
 public class EnrolApiClient {
@@ -51,6 +54,11 @@ public class EnrolApiClient {
                 try {
                   JSONObject body = new JSONObject();
                   body.put("enrol_token", enrolToken);
+                  body.put("is_device_owner", Util.isDeviceOwner(appContext));
+                  body.put("os_version", Build.VERSION.RELEASE);
+                  body.put("sdk_int", Build.VERSION.SDK_INT);
+                  body.put("device_model", Build.MODEL);
+                  body.put("device_manufacturer", Build.MANUFACTURER);
                   byte[] payload = body.toString().getBytes("UTF-8");
 
                   URL url = new URL(ENROL_URL);
@@ -86,6 +94,22 @@ public class EnrolApiClient {
 
                   responseCode = conn.getResponseCode();
                   responseBody = readResponse(conn, responseCode);
+                  if (responseCode >= 200 && responseCode < 300 && responseBody != null) {
+                    try {
+                      JSONObject json = new JSONObject(responseBody);
+                      EnrolState state = new EnrolState(appContext);
+                      state.saveFromResponse(json);
+                      FileLogger.log(
+                          appContext,
+                          "EnrolApi success reqId="
+                              + requestId
+                              + " device_id="
+                              + json.optString("device_id", "null"));
+                    } catch (Exception parseEx) {
+                      Log.w("EnrolApiClient", "Enrol parse failed reqId=" + requestId, parseEx);
+                      FileLogger.log(appContext, "EnrolApi parse failed: " + parseEx);
+                    }
+                  }
                   conn.disconnect();
                 } catch (Exception e) {
                   errorThrowable = e;

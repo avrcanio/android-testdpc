@@ -229,3 +229,6 @@ Ovaj dokument opisuje sve preference sekcije i funkcije koje se prikazuju na gla
 ## Reference
 - Izvor: `src/main/res/xml/device_policy_header.xml`
 - Aktivnost/fragment: `PolicyManagementActivity` â†’ `PolicyManagementFragment`
+
+## Qubit enrol telemetry (POST payload)
+- Enrol API, uz enrol_token, šalje i: is_device_owner (Util), os_version, sdk_int, device_model, device_manufacturer. Implementirano u EnrolApiClient.enrolWithSavedToken().

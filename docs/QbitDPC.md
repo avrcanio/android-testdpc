@@ -48,7 +48,10 @@ If Bazel cache is corrupted/locked, try `bazel shutdown` then rebuild. Avoid `cl
 - “Enrol Qubit” action is exposed in Policy Management (preference under “Enrollment-specific ID”); click triggers `EnrolApiClient.enrolWithSavedToken(...)`.
 - Enrol API:
   - URL: `https://user-admin.tailnet.qubitsecured.online/api/mdm/enrol`
-  - Method: POST JSON `{ "enrol_token": "<saved>" }`
+  - Method: POST JSON `{ "enrol_token": "<saved>", "is_device_owner": bool, "os_version": "...", "sdk_int": N, "device_model": "...", "device_manufacturer": "..." }`
+  - Response (201 fresh enrol): includes `device_id`, `device_token`, `rotate_required`, `policy`, `policy_etag`, `commands_pending`, `poll_interval_sec`.
+  - `EnrolState` persists device_id/device_token/policy metadata; policy stored as raw JSON string.
+  - UI: Policy Management shows `Qubit Device ID` (read-only summary from stored device_id).
   - One-time behaviour: first POST returns 201 (created); subsequent POSTs typically 409 (already enrolled).
   - Client logs with requestId, HTTP code, response body (if present), and TLS cert info; see logcat tag `EnrolApiClient` and `provision_log.txt`.
 - Trust: custom CA bundled at `res/raw/qubit_tailnet_ca.crt` with `network_security_config.xml` referenced in `AndroidManifest.xml` so app trusts the tailnet CA (no custom TrustManager needed).

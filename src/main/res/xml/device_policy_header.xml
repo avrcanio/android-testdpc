@@ -42,6 +42,12 @@
         testdpc:admin="any"
         testdpc:minSdkVersion="L" />
     <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="enrol_device_id"
+        android:selectable="false"
+        android:title="@string/enrol_device_id_title"
+        testdpc:admin="any"
+        testdpc:minSdkVersion="L" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
         android:key="install_tailscale"
         android:title="@string/install_tailscale_title"
         android:summary="@string/install_tailscale_summary"

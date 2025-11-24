@@ -124,6 +124,7 @@ import com.afwsamples.testdpc.common.preference.DpcPreferenceHelper;
 import com.afwsamples.testdpc.common.preference.DpcSwitchPreference;
 import com.afwsamples.testdpc.comp.BindDeviceAdminFragment;
 import com.afwsamples.testdpc.EnrolApiClient;
+import com.afwsamples.testdpc.EnrolState;
 import com.afwsamples.testdpc.policy.blockuninstallation.BlockUninstallationInfoArrayAdapter;
 import com.afwsamples.testdpc.policy.certificate.DelegatedCertInstallerFragment;
 import com.afwsamples.testdpc.policy.keyguard.LockScreenPolicyFragment.Container;
@@ -442,6 +443,7 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   private static final String SET_ORGANIZATION_ID_KEY = "set_organization_id";
   private static final String ENROLLMENT_SPECIFIC_ID_KEY = "enrollment_specific_id";
   private static final String ENROL_QUBIT_KEY = "enrol_qubit";
+  private static final String ENROL_DEVICE_ID_KEY = "enrol_device_id";
   private static final String ENABLE_USB_DATA_SIGNALING_KEY = "enable_usb_data_signaling";
   private static final String NEARBY_NOTIFICATION_STREAMING_KEY = "nearby_notification_streaming";
   private static final String NEARBY_APP_STREAMING_KEY = "nearby_app_streaming";
@@ -653,6 +655,7 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
     if (enrolQubitPreference != null) {
       enrolQubitPreference.setOnPreferenceClickListener(this);
     }
+    updateEnrolDeviceIdPreference();
 
     if ((isManagedProfileOwner() || isDeviceOwner()) && Util.SDK_INT >= VERSION_CODES.S) {
       mPreferentialNetworkServiceSwitchPreference =
@@ -1015,6 +1018,7 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   public void onResume() {
     super.onResume();
     getActivity().getActionBar().setTitle(R.string.policies_management);
+    updateEnrolDeviceIdPreference();
 
     // The settings might get changed outside the device policy app,
     // so, we need to make sure the preference gets updated accordingly.
@@ -4921,5 +4925,18 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
       Log.e(TAG, "Exception when calling " + method, e);
       showToast(errorMsgId);
     }
+  }
+
+  private void updateEnrolDeviceIdPreference() {
+    Preference enrolDeviceId = findPreference(ENROL_DEVICE_ID_KEY);
+    if (enrolDeviceId == null) {
+      return;
+    }
+    EnrolState state = new EnrolState(getActivity());
+    String deviceId = state.getDeviceId();
+    enrolDeviceId.setSummary(
+        TextUtils.isEmpty(deviceId)
+            ? getString(R.string.enrol_device_id_empty)
+            : deviceId);
   }
 }

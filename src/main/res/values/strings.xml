@@ -1284,6 +1284,8 @@
     <string name="enrollment_specific_id">Enrollment-specific ID</string>
     <string name="enrollment_specific_id_empty">Not Available</string>
     <string name="enrol_qubit">Enrol Qubit</string>
+    <string name="enrol_device_id_title">Qubit Device ID</string>
+    <string name="enrol_device_id_empty">Not enrolled</string>
 
     <!-- Messsage used in a toast to inform that operations that could be unsafe to execute might be safe now (or vice versa) -->
     <string name="safety_operations_change_message">Operations that affect <xliff:g id="reason">%1$s</xliff:g> are now <xliff:g id="state">%2$s</xliff:g></string>
