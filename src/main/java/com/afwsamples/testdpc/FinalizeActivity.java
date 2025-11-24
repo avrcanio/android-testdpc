@@ -21,13 +21,18 @@ import static android.app.admin.DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXT
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.app.Activity;
+import android.app.admin.DevicePolicyManager;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.PersistableBundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
+import com.afwsamples.testdpc.EnrolConfig;
+import com.afwsamples.testdpc.FileLogger;
 import com.afwsamples.testdpc.common.LaunchIntentUtil;
 import com.afwsamples.testdpc.common.ThemeUtil;
 import com.afwsamples.testdpc.common.Util;
@@ -46,6 +51,24 @@ public class FinalizeActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
+    Intent intent = getIntent();
+    PersistableBundle adminExtras =
+        intent.getParcelableExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+    if (adminExtras != null) {
+      String enrolToken = adminExtras.getString("enrol_token");
+
+      FileLogger.log(this, "FinalizeActivity: adminExtras keys = " + adminExtras.keySet());
+      FileLogger.log(this, "FinalizeActivity: enrol_token = " + enrolToken);
+
+      if (enrolToken != null) {
+        EnrolConfig config = new EnrolConfig(this);
+        config.saveEnrolToken(enrolToken);
+        FileLogger.log(this, "FinalizeActivity: enrol_token saved to prefs");
+      }
+    } else {
+      FileLogger.log(this, "FinalizeActivity: NO adminExtras bundle in intent");
+    }
 
     if (savedInstanceState == null) {
       if (Util.isManagedProfileOwner(this)) {

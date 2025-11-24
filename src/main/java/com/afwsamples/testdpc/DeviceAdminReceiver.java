@@ -27,6 +27,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Build.VERSION_CODES;
+import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.PersistableBundle;
 import android.os.Process;
@@ -38,6 +39,7 @@ import androidx.core.app.NotificationCompat;
 import com.afwsamples.testdpc.common.NotificationUtil;
 import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.provision.PostProvisioningTask;
+import com.afwsamples.testdpc.FileLogger;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -70,6 +72,28 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
 
   @Override
   public void onReceive(Context context, Intent intent) {
+    String action = intent != null ? intent.getAction() : "null";
+    FileLogger.log(context, "onReceive: action=" + action);
+
+    Bundle extras = intent != null ? intent.getExtras() : null;
+    if (extras != null) {
+      FileLogger.log(context, "onReceive: extras keys=" + extras.keySet());
+    } else {
+      FileLogger.log(context, "onReceive: no extras");
+    }
+
+    if (intent != null) {
+      Bundle adminExtras =
+          intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+      if (adminExtras != null) {
+        FileLogger.log(context, "onReceive: adminExtras keys=" + adminExtras.keySet());
+        String enrolToken = adminExtras.getString("enrol_token");
+        FileLogger.log(context, "onReceive: enrol_token=" + enrolToken);
+      } else {
+        FileLogger.log(context, "onReceive: NO adminExtras bundle");
+      }
+    }
+
     switch (intent.getAction()) {
       case ACTION_PASSWORD_REQUIREMENTS_CHANGED:
       case Intent.ACTION_BOOT_COMPLETED:
@@ -128,6 +152,21 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
 
   @Override
   public void onProfileProvisioningComplete(Context context, Intent intent) {
+    FileLogger.log(context, "onProfileProvisioningComplete CALLED");
+
+    Bundle adminExtras =
+        intent != null
+            ? intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE)
+            : null;
+    if (adminExtras != null) {
+      FileLogger.log(
+          context, "onProfileProvisioningComplete: adminExtras keys=" + adminExtras.keySet());
+      String enrolToken = adminExtras.getString("enrol_token");
+      FileLogger.log(context, "onProfileProvisioningComplete: enrol_token=" + enrolToken);
+    } else {
+      FileLogger.log(context, "onProfileProvisioningComplete: NO adminExtras bundle");
+    }
+
     if (Util.SDK_INT >= VERSION_CODES.O) {
       // See http://b/177617306.
       return;

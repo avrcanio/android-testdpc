@@ -29,6 +29,7 @@ import android.view.MenuItem;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.afwsamples.testdpc.EnrolConfig;
 import com.afwsamples.testdpc.common.DumpableActivity;
 import com.afwsamples.testdpc.common.OnBackPressedHandler;
 import com.afwsamples.testdpc.policy.PolicyManagementFragment;
@@ -55,6 +56,10 @@ public class PolicyManagementActivity extends DumpableActivity
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    FileLogger.log(this, "TEST: app main activity started");
+    EnrolConfig config = new EnrolConfig(this);
+    String savedToken = config.getEnrolToken();
+    FileLogger.log(this, "TEST: saved enrol_token from prefs = " + savedToken);
     setContentView(R.layout.activity_main);
     if (savedInstanceState == null) {
       getFragmentManager()

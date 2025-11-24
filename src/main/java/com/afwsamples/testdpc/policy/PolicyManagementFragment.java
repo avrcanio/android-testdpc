@@ -123,6 +123,7 @@ import com.afwsamples.testdpc.common.preference.DpcPreferenceBase;
 import com.afwsamples.testdpc.common.preference.DpcPreferenceHelper;
 import com.afwsamples.testdpc.common.preference.DpcSwitchPreference;
 import com.afwsamples.testdpc.comp.BindDeviceAdminFragment;
+import com.afwsamples.testdpc.EnrolApiClient;
 import com.afwsamples.testdpc.policy.blockuninstallation.BlockUninstallationInfoArrayAdapter;
 import com.afwsamples.testdpc.policy.certificate.DelegatedCertInstallerFragment;
 import com.afwsamples.testdpc.policy.keyguard.LockScreenPolicyFragment.Container;
@@ -440,6 +441,7 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   private static final String COMMON_CRITERIA_MODE_KEY = "common_criteria_mode";
   private static final String SET_ORGANIZATION_ID_KEY = "set_organization_id";
   private static final String ENROLLMENT_SPECIFIC_ID_KEY = "enrollment_specific_id";
+  private static final String ENROL_QUBIT_KEY = "enrol_qubit";
   private static final String ENABLE_USB_DATA_SIGNALING_KEY = "enable_usb_data_signaling";
   private static final String NEARBY_NOTIFICATION_STREAMING_KEY = "nearby_notification_streaming";
   private static final String NEARBY_APP_STREAMING_KEY = "nearby_app_streaming";
@@ -647,6 +649,10 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
     mDisableScreenCaptureOnParentSwitchPreference.setOnPreferenceChangeListener(this);
     mMuteAudioSwitchPreference = (SwitchPreference) findPreference(MUTE_AUDIO_KEY);
     mMuteAudioSwitchPreference.setOnPreferenceChangeListener(this);
+    Preference enrolQubitPreference = findPreference(ENROL_QUBIT_KEY);
+    if (enrolQubitPreference != null) {
+      enrolQubitPreference.setOnPreferenceClickListener(this);
+    }
 
     if ((isManagedProfileOwner() || isDeviceOwner()) && Util.SDK_INT >= VERSION_CODES.S) {
       mPreferentialNetworkServiceSwitchPreference =
@@ -1086,6 +1092,9 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
       return true;
     } else if (REQUEST_PRE_REBOOT_SECURITY_LOGS.equals(key)) {
       showFragment(SecurityLogsFragment.newInstance(true /* preReboot */));
+      return true;
+    } else if (ENROL_QUBIT_KEY.equals(key)) {
+      EnrolApiClient.enrolWithSavedToken(getActivity());
       return true;
     } else if (SET_ACCESSIBILITY_SERVICES_KEY.equals(key)) { // Avoid starting the same task twice.
       if (mGetAccessibilityServicesTask != null && !mGetAccessibilityServicesTask.isCancelled()) {

@@ -17,6 +17,7 @@
 package com.afwsamples.testdpc.provision;
 
 import android.app.Activity;
+import android.app.admin.DevicePolicyManager;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -34,13 +35,24 @@ public class ProvisioningSuccessActivity extends Activity {
   public void onCreate(Bundle icicle) {
     super.onCreate(icicle);
 
+    Intent intent = getIntent();
+    Bundle adminExtras =
+        intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+    if (adminExtras != null) {
+      String enrolToken = adminExtras.getString("enrol_token");
+      Log.d(TAG, "adminExtras keys: " + adminExtras.keySet());
+      Log.d(TAG, "enrol_token = " + enrolToken);
+    } else {
+      Log.d(TAG, "No admin extras bundle in intent");
+    }
+
     PostProvisioningTask task = new PostProvisioningTask(this);
-    if (!task.performPostProvisioningOperations(getIntent())) {
+    if (!task.performPostProvisioningOperations(intent)) {
       finish();
       return;
     }
 
-    Intent launchIntent = task.getPostProvisioningLaunchIntent(getIntent());
+    Intent launchIntent = task.getPostProvisioningLaunchIntent(intent);
     if (launchIntent != null) {
       startActivity(launchIntent);
     } else {

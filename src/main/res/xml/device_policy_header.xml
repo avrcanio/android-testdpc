@@ -37,6 +37,11 @@
         testdpc:permission="android.permission.MANAGE_DEVICE_POLICY_CERTIFICATES"
         testdpc:minSdkVersion="S" />
     <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="enrol_qubit"
+        android:title="@string/enrol_qubit"
+        testdpc:admin="any"
+        testdpc:minSdkVersion="L" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
         android:key="install_tailscale"
         android:title="@string/install_tailscale_title"
         android:summary="@string/install_tailscale_summary"
