@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 import android.widget.Toast;
+import com.afwsamples.testdpc.mdm.MdmSyncManager;
 
 public class MdmWakeReceiver extends BroadcastReceiver {
 
@@ -17,6 +18,6 @@ public class MdmWakeReceiver extends BroadcastReceiver {
 
     Toast.makeText(context, "MDM wake-up received for " + deviceId, Toast.LENGTH_SHORT).show();
 
-    // Placeholder for future sync trigger, e.g. MdmSyncService.enqueue(context)
+    MdmSyncManager.syncNow(context.getApplicationContext(), null);
   }
 }

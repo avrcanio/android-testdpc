@@ -7,4 +7,9 @@
             android:icon="@drawable/ic_search"
             android:title="@string/menu_search_title"
             android:showAsAction="ifRoom"/>
+    <item
+            android:id="@+id/action_sync"
+            android:icon="@drawable/ic_sync"
+            android:title="@string/menu_refresh"
+            android:showAsAction="ifRoom"/>
 </menu>

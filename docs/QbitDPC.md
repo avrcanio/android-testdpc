@@ -56,3 +56,14 @@ If Bazel cache is corrupted/locked, try `bazel shutdown` then rebuild. Avoid `cl
   - One-time behaviour: first POST returns 201 (created); subsequent POSTs typically 409 (already enrolled).
   - Client logs with requestId, HTTP code, response body (if present), and TLS cert info; see logcat tag `EnrolApiClient` and `provision_log.txt`.
 - Trust: custom CA bundled at `res/raw/qubit_tailnet_ca.crt` with `network_security_config.xml` referenced in `AndroidManifest.xml` so app trusts the tailnet CA (no custom TrustManager needed).
+
+## MDM sync & commands
+- Manual sync: toolbar sync icon in Policy Management triggers `MdmSyncManager.syncNow()`; MQTT wake broadcast does the same.
+- API flow: GET /policy → save via `PolicyConfig`; POST /inbox → process commands; POST /ack with results.
+- Supported commands in `MdmSyncManager.processCommand`:
+  - `install_apk_package` (download + install via PackageInstaller)
+  - `uninstall_app`
+  - `suspend_app`
+  - `hide_app`
+  - `wipe`
+- Logging: `MdmApiClient` and `MdmSyncManager` emit requestId-tagged logs to logcat and `provision_log.txt` (codes, body lengths, actions).

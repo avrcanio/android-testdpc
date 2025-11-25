@@ -26,10 +26,12 @@ import android.os.Build;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.afwsamples.testdpc.EnrolConfig;
+import com.afwsamples.testdpc.mdm.MdmSyncManager;
 import com.afwsamples.testdpc.common.DumpableActivity;
 import com.afwsamples.testdpc.common.OnBackPressedHandler;
 import com.afwsamples.testdpc.policy.PolicyManagementFragment;
@@ -86,8 +88,25 @@ public class PolicyManagementActivity extends DumpableActivity
           .replace(R.id.container, PolicySearchFragment.newInstance())
           .addToBackStack("search")
           .commit();
+      return true;
+    } else if (itemId == R.id.action_sync) {
+      Log.i(TAG, "Manual sync triggered from toolbar");
+      MdmSyncManager.syncNow(
+          this,
+          (success, message) ->
+              runOnUiThread(
+                  () ->
+                      Toast.makeText(
+                              this,
+                              success
+                                  ? "Sync ok: " + message
+                                  : "Sync failed: " + (message == null ? "" : message),
+                              Toast.LENGTH_SHORT)
+                          .show()));
+      return true;
     } else if (itemId == id.home) {
       getFragmentManager().popBackStack();
+      return true;
     }
     return false;
   }

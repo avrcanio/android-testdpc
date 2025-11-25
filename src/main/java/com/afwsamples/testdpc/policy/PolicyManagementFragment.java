@@ -103,6 +103,7 @@ import com.afwsamples.testdpc.DeviceAdminReceiver;
 import com.afwsamples.testdpc.DevicePolicyManagerGateway;
 import com.afwsamples.testdpc.DevicePolicyManagerGateway.FailedOperationException;
 import com.afwsamples.testdpc.DevicePolicyManagerGatewayImpl;
+import com.afwsamples.testdpc.FileLogger;
 import com.afwsamples.testdpc.R;
 import com.afwsamples.testdpc.SetupManagementActivity;
 import com.afwsamples.testdpc.common.AccountArrayAdapter;
@@ -3666,11 +3667,16 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
     Uri data;
     if (intent != null && (data = intent.getData()) != null) {
       try {
+        Log.i(TAG, "Installing APK from file Uri: " + data);
+        FileLogger.log(getActivity(), "Install APK from file: " + data);
         InputStream inputStream = getActivity().getContentResolver().openInputStream(data);
         PackageInstallationUtils.installPackage(getActivity(), inputStream, null);
+        Log.i(TAG, "Install invoked for Uri: " + data);
+        FileLogger.log(getActivity(), "Install invoked for Uri: " + data);
       } catch (IOException e) {
         showToast("Failed to open APK file");
         Log.e(TAG, "Failed to open APK file", e);
+        FileLogger.log(getActivity(), "Install APK failed to open: " + e.getMessage());
       }
     }
   }
