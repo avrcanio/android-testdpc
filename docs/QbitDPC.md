@@ -40,6 +40,7 @@ If Bazel cache is corrupted/locked, try `bazel shutdown` then rebuild. Avoid `cl
 - **304 from server**: server says “Not Modified” if cached. Client forces `Accept-Encoding: identity` and no-cache headers, but server-side can also disable ETag or serve versioned APK URLs.
 
 ## Enrolment logging & POST to Qubit backend
+- Wake action: receiver `MdmWakeReceiver` listens for `com.qubit.mdm.ACTION_MDM_WAKE` (exported) to trigger future sync (currently logs + Toast).
 - Provisioning flow now logs extras and enrol token to `provision_log.txt` (internal storage) from:
   - `ProvisioningSuccessActivity`, `FinalizeActivity`, `DeviceAdminReceiver` (onReceive + onProfileProvisioningComplete)
   - `PolicyManagementActivity` logs the saved token on app start.
