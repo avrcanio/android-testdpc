@@ -14,12 +14,15 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.cert.Certificate;
 import android.os.Build;
+import android.content.Intent;
 import org.json.JSONObject;
 import javax.net.ssl.HttpsURLConnection;
 import com.afwsamples.testdpc.EnrolState;
 
 /** Fire-and-forget client that posts the saved enrol token to the Qubit endpoint. */
 public class EnrolApiClient {
+
+  public static final String ACTION_ENROL_STATE_UPDATED = "com.qubit.mdm.ACTION_ENROL_STATE_UPDATED";
 
   private static final String ENROL_URL =
       "https://user-admin.tailnet.qubitsecured.online/api/mdm/enrol";
@@ -105,6 +108,9 @@ public class EnrolApiClient {
                               + requestId
                               + " device_id="
                               + json.optString("device_id", "null"));
+                      Intent intent = new Intent(ACTION_ENROL_STATE_UPDATED);
+                      intent.setPackage(appContext.getPackageName());
+                      appContext.sendBroadcast(intent);
                     } catch (Exception parseEx) {
                       Log.w("EnrolApiClient", "Enrol parse failed reqId=" + requestId, parseEx);
                       FileLogger.log(appContext, "EnrolApi parse failed: " + parseEx);

@@ -4,6 +4,7 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.util.Log;
 import com.afwsamples.testdpc.DeviceAdminReceiver;
 import com.afwsamples.testdpc.EnrolState;
@@ -218,8 +219,50 @@ public final class MdmSyncManager {
           DevicePolicyManager dpm =
               (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
           ComponentName admin = DeviceAdminReceiver.getComponentName(context);
-          dpm.wipeData(0);
-          ack.put("success", true);
+          JSONObject wipePayload = cmd.optJSONObject("payload");
+          boolean wipeExternal =
+              wipePayload != null && wipePayload.optBoolean("wipe_external_storage", false);
+          boolean wipeResetProtection =
+              wipePayload != null && wipePayload.optBoolean("wipe_reset_protection_data", false);
+          int flags = 0;
+          if (wipeExternal) {
+            flags |= DevicePolicyManager.WIPE_EXTERNAL_STORAGE;
+          }
+          if (wipeResetProtection) {
+            flags |= DevicePolicyManager.WIPE_RESET_PROTECTION_DATA;
+          }
+          FileLogger.log(
+              context,
+              "MdmSync wipe invoked flags="
+                  + flags
+                  + " wipeExternal="
+                  + wipeExternal
+                  + " wipeRP="
+                  + wipeResetProtection);
+          try {
+            boolean isOrgOwned =
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    && dpm.isOrganizationOwnedDeviceWithManagedProfile();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+              dpm.wipeDevice(flags);
+            } else if (isOrgOwned && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+              // COPE before U uses parent instance and ignores flags.
+              DevicePolicyManager parent = dpm.getParentProfileInstance(admin);
+              if (parent != null) {
+                parent.wipeData(0);
+              } else {
+                throw new IllegalStateException("Parent DPM missing for org-owned profile");
+              }
+            } else {
+              dpm.wipeData(flags);
+            }
+            ack.put("success", true);
+            ack.put("flags", flags);
+          } catch (Exception e) {
+            FileLogger.log(context, "MdmSync wipe error: " + e.getMessage());
+            ack.put("success", false);
+            ack.put("error", e.getMessage());
+          }
           break;
         default:
           ack.put("success", false);

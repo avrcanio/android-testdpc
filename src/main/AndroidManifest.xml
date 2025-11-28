@@ -261,6 +261,11 @@
         </provider>
 
         <provider
+                android:authorities="com.afwsamples.testdpc.mqttcredentials"
+                android:name=".MqttCredentialsProvider"
+                android:exported="true" />
+
+        <provider
                 android:authorities="com.afwsamples.testdpc.usericoncontentprovider"
                 android:name="com.afwsamples.testdpc.UserIconContentProvider"
                 android:grantUriPermissions="true"

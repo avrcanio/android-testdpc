@@ -43,6 +43,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -507,6 +508,15 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   private UserManager mUserManager;
   private TelephonyManager mTelephonyManager;
   private AccountManager mAccountManager;
+  private final android.content.BroadcastReceiver mEnrolStateReceiver =
+      new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+          if (EnrolApiClient.ACTION_ENROL_STATE_UPDATED.equals(intent.getAction())) {
+            updateEnrolDeviceIdPreference();
+          }
+        }
+      };
 
   private DpcPreference mInstallExistingPackagePreference;
 
@@ -573,6 +583,13 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
   @Override
   public void onCreate(Bundle savedInstanceState) {
     Context context = getActivity();
+    IntentFilter enrolFilter = new IntentFilter(EnrolApiClient.ACTION_ENROL_STATE_UPDATED);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      context.registerReceiver(
+          mEnrolStateReceiver, enrolFilter, Context.RECEIVER_NOT_EXPORTED);
+    } else {
+      context.registerReceiver(mEnrolStateReceiver, enrolFilter);
+    }
     mAdminComponentName = DeviceAdminReceiver.getComponentName(context);
     mDevicePolicyManager = context.getSystemService(DevicePolicyManager.class);
     mParentDevicePolicyManager =
@@ -602,6 +619,19 @@ public class PolicyManagementFragment extends BaseSearchablePolicyPreferenceFrag
     mVideoUri = getStorageUri("video.mp4");
 
     super.onCreate(savedInstanceState);
+  }
+
+  @Override
+  public void onDestroy() {
+    Context context = getActivity();
+    if (context != null) {
+      try {
+        context.unregisterReceiver(mEnrolStateReceiver);
+      } catch (IllegalArgumentException ignored) {
+        // Receiver not registered or already unregistered.
+      }
+    }
+    super.onDestroy();
   }
 
   @Override

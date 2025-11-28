@@ -15,6 +15,7 @@ public class EnrolState {
   private static final String KEY_POLL_INTERVAL_SEC = "poll_interval_sec";
   private static final String KEY_POLICY_JSON = "policy_json";
   private static final String KEY_ROTATE_REQUIRED = "rotate_required";
+  private static final String KEY_MQTT_PASSWORD = "mqtt_password";
 
   private final SharedPreferences prefs;
 
@@ -26,6 +27,7 @@ public class EnrolState {
     SharedPreferences.Editor e = prefs.edit();
     e.putString(KEY_DEVICE_ID, json.optString("device_id", null));
     e.putString(KEY_DEVICE_TOKEN, json.optString("device_token", null));
+    e.putString(KEY_MQTT_PASSWORD, json.optString("mqtt_password", null));
     e.putString(KEY_POLICY_ETAG, json.optString("policy_etag", null));
     e.putInt(KEY_COMMANDS_PENDING, json.optInt("commands_pending", 0));
     e.putInt(KEY_POLL_INTERVAL_SEC, json.optInt("poll_interval_sec", 0));
@@ -43,5 +45,9 @@ public class EnrolState {
 
   public String getDeviceToken() {
     return prefs.getString(KEY_DEVICE_TOKEN, null);
+  }
+
+  public String getMqttPassword() {
+    return prefs.getString(KEY_MQTT_PASSWORD, null);
   }
 }

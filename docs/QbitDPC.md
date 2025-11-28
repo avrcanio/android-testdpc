@@ -5,6 +5,8 @@ Short, Qbit-specific notes for working with this TestDPC fork. General TestDPC d
 ## Overview
 - Device owner / profile owner capable; target package `com.afwsamples.testdpc`.
 - Custom addition: one-tap Tailscale install from Policy Management (device owner only) via `https://qubitmdm.online/repo/mdm/tailscale.apk`.
+- Enrol state persists `device_id`, `device_token`, `policy_etag`, `policy_json`, `rotate_required`, `commands_pending`, `poll_interval_sec`, and `mqtt_password`.
+- Credential sharing for MQTT Core via `content://com.afwsamples.testdpc.mqttcredentials/credentials` (see below).
 - Build system: Bazel (via bazelisk).
 
 ## Prerequisites
@@ -46,12 +48,12 @@ If Bazel cache is corrupted/locked, try `bazel shutdown` then rebuild. Avoid `cl
   - `PolicyManagementActivity` logs the saved token on app start.
   - Helper: `FileLogger` (appends to `/data/user/0/com.afwsamples.testdpc/files/provision_log.txt`).
 - Token is persisted in `SharedPreferences` via `EnrolConfig` (key `enrol_token`).
-- “Enrol Qubit” action is exposed in Policy Management (preference under “Enrollment-specific ID”); click triggers `EnrolApiClient.enrolWithSavedToken(...)`.
+- “Enrol Qubit” action is exposed in Policy Management (preference under “Enrollment-specific ID”); click triggers `EnrolApiClient.enrolWithSavedToken(...)`. After a successful enrol response, a local broadcast `com.qubit.mdm.ACTION_ENROL_STATE_UPDATED` refreshes the Device ID preference.
 - Enrol API:
   - URL: `https://user-admin.tailnet.qubitsecured.online/api/mdm/enrol`
   - Method: POST JSON `{ "enrol_token": "<saved>", "is_device_owner": bool, "os_version": "...", "sdk_int": N, "device_model": "...", "device_manufacturer": "..." }`
   - Response (201 fresh enrol): includes `device_id`, `device_token`, `rotate_required`, `policy`, `policy_etag`, `commands_pending`, `poll_interval_sec`.
-  - `EnrolState` persists device_id/device_token/policy metadata; policy stored as raw JSON string.
+  - `EnrolState` persists device_id/device_token/policy metadata/mqtt_password; policy stored as raw JSON string.
   - UI: Policy Management shows `Qubit Device ID` (read-only summary from stored device_id).
   - One-time behaviour: first POST returns 201 (created); subsequent POSTs typically 409 (already enrolled).
   - Client logs with requestId, HTTP code, response body (if present), and TLS cert info; see logcat tag `EnrolApiClient` and `provision_log.txt`.
@@ -65,5 +67,20 @@ If Bazel cache is corrupted/locked, try `bazel shutdown` then rebuild. Avoid `cl
   - `uninstall_app`
   - `suspend_app`
   - `hide_app`
-  - `wipe`
+  - `wipe` — payload `wipe_external_storage` / `wipe_reset_protection_data` mapped to `DevicePolicyManager` flags; on Android U+ uses `wipeDevice(flags)`. For organization-owned profile (COPE) pre-U, uses parent DPM and ignores flags (platform limitation).
 - Logging: `MdmApiClient` and `MdmSyncManager` emit requestId-tagged logs to logcat and `provision_log.txt` (codes, body lengths, actions).
+
+## MQTT Core credentials handoff
+- Content provider authority: `com.afwsamples.testdpc.mqttcredentials`, URI `content://com.afwsamples.testdpc.mqttcredentials/credentials`.
+- Columns returned: `device_id`, `mqtt_password`.
+- Access: exported, but gated by calling package check (`com.qubit.mqttcore` or same app). No shared storage writes.
+- Usage (Kotlin):
+  ```kotlin
+  val uri = Uri.parse("content://com.afwsamples.testdpc.mqttcredentials/credentials")
+  context.contentResolver.query(uri, arrayOf("device_id", "mqtt_password"), null, null, null)?.use { c ->
+      if (c.moveToFirst()) {
+          val deviceId = c.getString(c.getColumnIndexOrThrow("device_id"))
+          val mqttPassword = c.getString(c.getColumnIndexOrThrow("mqtt_password"))
+      }
+  }
+  ```
