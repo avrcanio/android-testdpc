@@ -8,6 +8,8 @@ public class EnrolConfig {
 
   private static final String PREFS_NAME = "dpc_config";
   private static final String KEY_ENROL_TOKEN = "enrol_token";
+  private static final String KEY_APK_INDEX_URL = "apk_index_url";
+  private static final String KEY_SUPPORT_URL = "support_url";
 
   private final SharedPreferences prefs;
 
@@ -21,5 +23,21 @@ public class EnrolConfig {
 
   public String getEnrolToken() {
     return prefs.getString(KEY_ENROL_TOKEN, null);
+  }
+
+  public void saveApkIndexUrl(String url) {
+    prefs.edit().putString(KEY_APK_INDEX_URL, url).apply();
+  }
+
+  public String getApkIndexUrl() {
+    return prefs.getString(KEY_APK_INDEX_URL, null);
+  }
+
+  public void saveSupportUrl(String url) {
+    prefs.edit().putString(KEY_SUPPORT_URL, url).apply();
+  }
+
+  public String getSupportUrl() {
+    return prefs.getString(KEY_SUPPORT_URL, null);
   }
 }

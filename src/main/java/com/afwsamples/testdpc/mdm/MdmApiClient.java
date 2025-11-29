@@ -32,6 +32,7 @@ public final class MdmApiClient {
     conn.setRequestProperty("Accept", "application/json");
     if (deviceToken != null) {
       conn.setRequestProperty("X-Device-Token", deviceToken);
+      conn.setRequestProperty("Authorization", "Device " + deviceToken);
     }
     if ("POST".equals(method)) {
       conn.setDoOutput(true);
@@ -107,6 +108,38 @@ public final class MdmApiClient {
       return new JSONObject(body);
     }
     throw new Exception("POST /ack failed code=" + code + " body=" + body);
+  }
+
+  public static JSONObject postInventory(Context context, JSONArray packages, String requestId)
+      throws Exception {
+    if (packages == null || packages.length() == 0) {
+      return null;
+    }
+    String token = new EnrolState(context).getDeviceToken();
+    HttpURLConnection conn = open(context, "/inventory", "POST", token);
+    JSONObject payload = new JSONObject();
+    payload.put("request_id", requestId);
+    payload.put("timestamp", System.currentTimeMillis() / 1000);
+    payload.put("packages", packages);
+    payload.put("device_id", new EnrolState(context).getDeviceId());
+    byte[] bytes = payload.toString().getBytes("UTF-8");
+    OutputStream os = conn.getOutputStream();
+    os.write(bytes);
+    os.flush();
+    os.close();
+    int code = conn.getResponseCode();
+    String body = readBody(conn, code);
+    conn.disconnect();
+    log(
+        context,
+        "POST /inventory code=" + code + " bodyLen=" + (body == null ? 0 : body.length()));
+    if (code >= 200 && code < 300) {
+      return body != null ? new JSONObject(body) : null;
+    }
+    if (body != null) {
+      log(context, "POST /inventory error code=" + code + " body=" + body);
+    }
+    throw new Exception("POST /inventory failed code=" + code + " body=" + body);
   }
 
   private static void log(Context context, String msg) {

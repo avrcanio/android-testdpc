@@ -40,6 +40,7 @@ import com.afwsamples.testdpc.common.NotificationUtil;
 import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.provision.PostProvisioningTask;
 import com.afwsamples.testdpc.FileLogger;
+import com.afwsamples.testdpc.EnrolConfig;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -69,6 +70,8 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
 
   private static final int CHANGE_PASSWORD_NOTIFICATION_ID = 101;
   private static final int PASSWORD_FAILED_NOTIFICATION_ID = 102;
+  private static final String EXTRA_PROVISIONING_SUPPORT_URL =
+      "android.app.extra.PROVISIONING_SUPPORT_URL";
 
   @Override
   public void onReceive(Context context, Intent intent) {
@@ -88,9 +91,24 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
       if (adminExtras != null) {
         FileLogger.log(context, "onReceive: adminExtras keys=" + adminExtras.keySet());
         String enrolToken = adminExtras.getString("enrol_token");
+        String apkIndexUrl = adminExtras.getString("apk_index_url");
         FileLogger.log(context, "onReceive: enrol_token=" + enrolToken);
+        FileLogger.log(context, "onReceive: apk_index_url=" + apkIndexUrl);
+        EnrolConfig config = new EnrolConfig(context);
+        if (enrolToken != null) {
+          config.saveEnrolToken(enrolToken);
+        }
+        if (apkIndexUrl != null) {
+          config.saveApkIndexUrl(apkIndexUrl);
+        }
       } else {
         FileLogger.log(context, "onReceive: NO adminExtras bundle");
+      }
+      String supportUrl = intent.getStringExtra(EXTRA_PROVISIONING_SUPPORT_URL);
+      if (supportUrl != null) {
+        FileLogger.log(context, "onReceive: support_url=" + supportUrl);
+        EnrolConfig config = new EnrolConfig(context);
+        config.saveSupportUrl(supportUrl);
       }
     }
 
@@ -158,13 +176,29 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
         intent != null
             ? intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE)
             : null;
+    String supportUrl = intent != null ? intent.getStringExtra(EXTRA_PROVISIONING_SUPPORT_URL) : null;
     if (adminExtras != null) {
       FileLogger.log(
           context, "onProfileProvisioningComplete: adminExtras keys=" + adminExtras.keySet());
       String enrolToken = adminExtras.getString("enrol_token");
+      String apkIndexUrl = adminExtras.getString("apk_index_url");
       FileLogger.log(context, "onProfileProvisioningComplete: enrol_token=" + enrolToken);
+      FileLogger.log(context, "onProfileProvisioningComplete: apk_index_url=" + apkIndexUrl);
+      EnrolConfig config = new EnrolConfig(context);
+      if (enrolToken != null) {
+        config.saveEnrolToken(enrolToken);
+      }
+      if (apkIndexUrl != null) {
+        config.saveApkIndexUrl(apkIndexUrl);
+      }
+      if (supportUrl != null) {
+        config.saveSupportUrl(supportUrl);
+      }
     } else {
       FileLogger.log(context, "onProfileProvisioningComplete: NO adminExtras bundle");
+    }
+    if (supportUrl != null) {
+      FileLogger.log(context, "onProfileProvisioningComplete: support_url=" + supportUrl);
     }
 
     if (Util.SDK_INT >= VERSION_CODES.O) {

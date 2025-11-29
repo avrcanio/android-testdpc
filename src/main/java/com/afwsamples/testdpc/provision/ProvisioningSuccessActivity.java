@@ -22,7 +22,10 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
+import com.afwsamples.testdpc.EnrolConfig;
+import com.afwsamples.testdpc.provision.BaselineProvisioner;
 import com.afwsamples.testdpc.R;
+import java.util.Locale;
 
 /**
  * Activity that gets launched by the {@link
@@ -30,6 +33,8 @@ import com.afwsamples.testdpc.R;
  */
 public class ProvisioningSuccessActivity extends Activity {
   private static final String TAG = "ProvisioningSuccess";
+  private static final String EXTRA_PROVISIONING_SUPPORT_URL =
+      "android.app.extra.PROVISIONING_SUPPORT_URL";
 
   @Override
   public void onCreate(Bundle icicle) {
@@ -38,13 +43,42 @@ public class ProvisioningSuccessActivity extends Activity {
     Intent intent = getIntent();
     Bundle adminExtras =
         intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+    String enrolToken = null;
+    String apkIndexUrl = null;
+    String supportUrl = intent.getStringExtra(EXTRA_PROVISIONING_SUPPORT_URL);
     if (adminExtras != null) {
-      String enrolToken = adminExtras.getString("enrol_token");
+      enrolToken = adminExtras.getString("enrol_token");
+      apkIndexUrl = adminExtras.getString("apk_index_url");
       Log.d(TAG, "adminExtras keys: " + adminExtras.keySet());
       Log.d(TAG, "enrol_token = " + enrolToken);
+      Log.d(TAG, "apk_index_url = " + apkIndexUrl);
     } else {
       Log.d(TAG, "No admin extras bundle in intent");
     }
+
+    if (supportUrl != null) {
+      Log.d(TAG, "support_url = " + supportUrl);
+    }
+
+    EnrolConfig enrolConfig = new EnrolConfig(this);
+    if (enrolToken != null) {
+      enrolConfig.saveEnrolToken(enrolToken);
+    }
+    if (apkIndexUrl != null) {
+      enrolConfig.saveApkIndexUrl(apkIndexUrl);
+    }
+    if (supportUrl != null) {
+      enrolConfig.saveSupportUrl(supportUrl);
+    } else {
+      supportUrl = enrolConfig.getSupportUrl();
+    }
+
+    BaselineProvisioner.run(
+        this,
+        apkIndexUrl != null ? apkIndexUrl : enrolConfig.getApkIndexUrl(),
+        enrolToken != null ? enrolToken : enrolConfig.getEnrolToken(),
+        supportUrl,
+        Long.toHexString(System.currentTimeMillis()).toUpperCase(Locale.US));
 
     PostProvisioningTask task = new PostProvisioningTask(this);
     if (!task.performPostProvisioningOperations(intent)) {

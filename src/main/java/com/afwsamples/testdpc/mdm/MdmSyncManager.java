@@ -4,13 +4,17 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.os.Build;
+import android.os.UserManager;
 import android.util.Log;
 import com.afwsamples.testdpc.DeviceAdminReceiver;
 import com.afwsamples.testdpc.EnrolState;
 import com.afwsamples.testdpc.FileLogger;
 import com.afwsamples.testdpc.common.PackageInstallationUtils;
+import com.afwsamples.testdpc.mdm.InventoryReporter;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -65,7 +69,7 @@ public final class MdmSyncManager {
                   for (int i = 0; i < inbox.length(); i++) {
                     JSONObject cmd = inbox.optJSONObject(i);
                     if (cmd == null) continue;
-                    JSONObject ack = processCommand(app, cmd);
+                    JSONObject ack = processCommand(app, cmd, requestId);
                     if (ack != null) {
                       ackList.put(ack);
                     }
@@ -99,12 +103,20 @@ public final class MdmSyncManager {
     }
   }
 
-  private static JSONObject processCommand(Context context, JSONObject cmd) {
-    String type = cmd.optString("type", "");
+  private static JSONObject processCommand(Context context, JSONObject cmd, String requestId) {
+    String typeRaw = cmd.optString("type", cmd.optString("command", ""));
+    String type = typeRaw.toLowerCase(Locale.US);
     long id = cmd.optLong("id", -1);
     JSONObject ack = new JSONObject();
     try {
       ack.put("id", id);
+      if (!typeRaw.isEmpty()) {
+        ack.put("command", typeRaw);
+      }
+      String qid = cmd.optString("qid", null);
+      if (qid != null) {
+        ack.put("qid", qid);
+      }
       switch (type) {
         case "install_apk_package":
           JSONObject payload = cmd.optJSONObject("payload");
@@ -126,6 +138,9 @@ public final class MdmSyncManager {
           PackageInstallationUtils.installPackage(context, in, pkg);
           FileLogger.log(context, "MdmSync install invoked url=" + url + " pkg=" + pkg);
           ack.put("success", true);
+          JSONArray inventoryInstall = InventoryReporter.collect(context);
+          ack.put("inventory", inventoryInstall);
+          maybePostInventory(context, inventoryInstall, requestId);
           break;
         case "uninstall_app":
           JSONObject uninstallPayload = cmd.optJSONObject("payload");
@@ -140,6 +155,9 @@ public final class MdmSyncManager {
           PackageInstallationUtils.uninstallPackage(context, pkgName);
           FileLogger.log(context, "MdmSync uninstall invoked pkg=" + pkgName);
           ack.put("success", true);
+          JSONArray inventoryUninstall = InventoryReporter.collect(context);
+          ack.put("inventory", inventoryUninstall);
+          maybePostInventory(context, inventoryUninstall, requestId);
           break;
         case "suspend_app":
           JSONObject suspendPayload = cmd.optJSONObject("payload");
@@ -168,6 +186,9 @@ public final class MdmSyncManager {
                 context,
                 "MdmSync suspend_app invoked suspended=" + suspended + " pkgs=" + pkgs.toString());
             ack.put("success", true);
+            JSONArray inventorySuspend = InventoryReporter.collect(context);
+            ack.put("inventory", inventorySuspend);
+            maybePostInventory(context, inventorySuspend, requestId);
           } catch (Exception e) {
             FileLogger.log(context, "MdmSync suspend_app error: " + e.getMessage());
             ack.put("success", false);
@@ -209,10 +230,84 @@ public final class MdmSyncManager {
             if (!allOk) {
               ack.put("error", "setApplicationHidden returned false for at least one pkg");
             }
+            JSONArray inventoryHide = InventoryReporter.collect(context);
+            ack.put("inventory", inventoryHide);
+            maybePostInventory(context, inventoryHide, requestId);
           } catch (Exception e) {
             FileLogger.log(context, "MdmSync hide_app error: " + e.getMessage());
             ack.put("success", false);
             ack.put("error", e.getMessage());
+          }
+          break;
+        case "block_uninstall":
+          JSONObject blockPayload = cmd.optJSONObject("payload");
+          JSONArray blockPkgArray =
+              blockPayload != null ? blockPayload.optJSONArray("packages") : null;
+          boolean blocked = blockPayload != null && blockPayload.optBoolean("blocked", true);
+          if (blockPkgArray == null || blockPkgArray.length() == 0) {
+            ack.put("success", false);
+            ack.put("error", "missing_packages");
+            break;
+          }
+          DevicePolicyManager dpmBlock =
+              (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+          ComponentName adminBlock = DeviceAdminReceiver.getComponentName(context);
+          JSONArray metaPackages = new JSONArray();
+          boolean allBlocked = true;
+          for (int i = 0; i < blockPkgArray.length(); i++) {
+            String p = blockPkgArray.optString(i, null);
+            if (p == null) {
+              continue;
+            }
+            JSONObject metaEntry = new JSONObject();
+            metaEntry.put("package", p);
+            try {
+              dpmBlock.setUninstallBlocked(adminBlock, p, blocked);
+              metaEntry.put("blocked", blocked);
+            } catch (Exception e) {
+              allBlocked = false;
+              metaEntry.put("blocked", !blocked);
+              metaEntry.put("message", e.getMessage());
+              FileLogger.log(context, "MdmSync block_uninstall error pkg=" + p + " err=" + e.getMessage());
+            }
+            metaPackages.put(metaEntry);
+          }
+          ack.put("success", allBlocked);
+          JSONObject meta = new JSONObject();
+          meta.put("packages", metaPackages);
+          meta.put("blocked", blocked);
+          ack.put("meta", meta);
+          break;
+        case "set_location":
+          JSONObject locationPayload = cmd.optJSONObject("payload");
+          boolean locationEnabled =
+              locationPayload != null && locationPayload.optBoolean("enabled", false);
+          DevicePolicyManager dpmLocation =
+              (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+          ComponentName adminLocation = DeviceAdminReceiver.getComponentName(context);
+          try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+              ack.put("success", false);
+              ack.put("error", "setLocationEnabled requires API 30+");
+              ack.put("current_state", isLocationEnabled(context));
+              break;
+            }
+            dpmLocation.setLocationEnabled(adminLocation, locationEnabled);
+            dpmLocation.addUserRestriction(adminLocation, UserManager.DISALLOW_CONFIG_LOCATION);
+            boolean currentLocationState = isLocationEnabled(context);
+            FileLogger.log(
+                context,
+                "MdmSync set_location invoked enabled="
+                    + locationEnabled
+                    + " now="
+                    + currentLocationState);
+            ack.put("success", true);
+            ack.put("current_state", currentLocationState);
+          } catch (Exception e) {
+            FileLogger.log(context, "MdmSync set_location error: " + e.getMessage());
+            ack.put("success", false);
+            ack.put("error", e.getMessage());
+            ack.put("current_state", isLocationEnabled(context));
           }
           break;
         case "wipe":
@@ -303,5 +398,25 @@ public final class MdmSyncManager {
   private static void log(Context context, String reqId, String msg) {
     Log.i(TAG, "reqId=" + reqId + " " + msg);
     FileLogger.log(context, "MdmSync reqId=" + reqId + " " + msg);
+  }
+
+  private static boolean isLocationEnabled(Context context) {
+    try {
+      LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+      return lm != null && lm.isLocationEnabled();
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private static void maybePostInventory(Context context, JSONArray inventory, String requestId) {
+    if (inventory == null || inventory.length() == 0) {
+      return;
+    }
+    try {
+      MdmApiClient.postInventory(context, inventory, requestId);
+    } catch (Exception e) {
+      FileLogger.log(context, "Inventory upload failed reqId=" + requestId + " err=" + e.getMessage());
+    }
   }
 }

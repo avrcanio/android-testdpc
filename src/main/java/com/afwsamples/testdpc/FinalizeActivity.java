@@ -37,14 +37,18 @@ import com.afwsamples.testdpc.common.LaunchIntentUtil;
 import com.afwsamples.testdpc.common.ThemeUtil;
 import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.provision.ProvisioningUtil;
+import com.afwsamples.testdpc.provision.BaselineProvisioner;
 import com.google.android.setupcompat.template.FooterBarMixin;
 import com.google.android.setupcompat.template.FooterButton;
 import com.google.android.setupcompat.util.WizardManagerHelper;
 import com.google.android.setupdesign.GlifLayout;
+import java.util.Locale;
 
 public class FinalizeActivity extends Activity {
 
   private static final String TAG = FinalizeActivity.class.getSimpleName();
+  private static final String EXTRA_PROVISIONING_SUPPORT_URL =
+      "android.app.extra.PROVISIONING_SUPPORT_URL";
 
   private GlifLayout mSetupWizardLayout;
 
@@ -55,11 +59,16 @@ public class FinalizeActivity extends Activity {
     Intent intent = getIntent();
     PersistableBundle adminExtras =
         intent.getParcelableExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+    String supportUrl = intent.getStringExtra(EXTRA_PROVISIONING_SUPPORT_URL);
+    String apkIndexUrl = null;
+    String enrolToken = null;
     if (adminExtras != null) {
-      String enrolToken = adminExtras.getString("enrol_token");
+      enrolToken = adminExtras.getString("enrol_token");
+      apkIndexUrl = adminExtras.getString("apk_index_url");
 
       FileLogger.log(this, "FinalizeActivity: adminExtras keys = " + adminExtras.keySet());
       FileLogger.log(this, "FinalizeActivity: enrol_token = " + enrolToken);
+      FileLogger.log(this, "FinalizeActivity: apk_index_url = " + apkIndexUrl);
 
       if (enrolToken != null) {
         EnrolConfig config = new EnrolConfig(this);
@@ -69,6 +78,27 @@ public class FinalizeActivity extends Activity {
     } else {
       FileLogger.log(this, "FinalizeActivity: NO adminExtras bundle in intent");
     }
+    EnrolConfig enrolConfig = new EnrolConfig(this);
+    if (apkIndexUrl != null) {
+      enrolConfig.saveApkIndexUrl(apkIndexUrl);
+    } else {
+      apkIndexUrl = enrolConfig.getApkIndexUrl();
+    }
+    if (supportUrl != null) {
+      enrolConfig.saveSupportUrl(supportUrl);
+    } else {
+      supportUrl = enrolConfig.getSupportUrl();
+    }
+    if (enrolToken == null) {
+      enrolToken = enrolConfig.getEnrolToken();
+    }
+
+    BaselineProvisioner.run(
+        this,
+        apkIndexUrl,
+        enrolToken,
+        supportUrl,
+        Long.toHexString(System.currentTimeMillis()).toUpperCase(Locale.US));
 
     if (savedInstanceState == null) {
       if (Util.isManagedProfileOwner(this)) {
