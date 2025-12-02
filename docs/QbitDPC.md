@@ -31,8 +31,14 @@ From `android-testdpc/`:
 ```powershell
 .\.bazelisk\bazel.exe build //:testdpc
 .\.bazelisk\bazel.exe mobile-install //:testdpc --start_app
+.\.bazelisk\bazel.exe build //:testdpc --define variant=lite   # lite/field build
 ```
 If Bazel cache is locked/corrupt: `bazel shutdown` then rebuild. Avoid `clean --expunge` unless needed.
+
+### Lite mode (field devices)
+- Flag `config_lite_mode` controls behaviour (default false). Bazel select picks `src/lite/res/**` when `--define variant=lite`, otherwise `src/dev/res/**` keeps full app.
+- Lite build lansira `LiteEntryActivity` direktno: prikazuje Device ID (iz enrol state), spremljeni enrol token, te tipke **Enrol** (poziva `EnrolApiClient.enrolWithSavedToken`) i **Refresh** (ponovno učitava ID/token). Ostali Policy Management UI je skriven.
+- Dev build (`bazel build //:testdpc`) ostaje nepromijenjen.
 
 ## Provisioning logging & enrol
 - Logging: `DeviceAdminReceiver`, `ProvisioningSuccessActivity`, `FinalizeActivity`, and `PolicyManagementActivity` log admin extras and enrol tokens to `provision_log.txt` (`/data/user/0/com.afwsamples.testdpc/files`).

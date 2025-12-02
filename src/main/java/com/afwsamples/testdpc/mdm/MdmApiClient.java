@@ -142,6 +142,19 @@ public final class MdmApiClient {
     throw new Exception("POST /inventory failed code=" + code + " body=" + body);
   }
 
+  public static JSONObject postMqttCredentials(Context context) throws Exception {
+    String token = new EnrolState(context).getDeviceToken();
+    HttpURLConnection conn = open(context, "/mqtt/credentials", "POST", token);
+    int code = conn.getResponseCode();
+    String body = readBody(conn, code);
+    conn.disconnect();
+    log(context, "POST /mqtt/credentials code=" + code + " body=" + body);
+    if (code >= 200 && code < 300 && body != null) {
+      return new JSONObject(body);
+    }
+    throw new Exception("POST /mqtt/credentials failed code=" + code + " body=" + body);
+  }
+
   private static void log(Context context, String msg) {
     Log.i(TAG, msg);
     FileLogger.log(context, "MdmApi: " + msg);

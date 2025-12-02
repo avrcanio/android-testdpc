@@ -278,6 +278,24 @@ public final class MdmSyncManager {
           meta.put("blocked", blocked);
           ack.put("meta", meta);
           break;
+        case "get_user_restrictions":
+          ack.put("success", true);
+          ack.put("meta", UserRestrictionsManager.snapshot(context));
+          break;
+        case "set_user_restrictions":
+          JSONObject restrictionPayload = cmd.optJSONObject("payload");
+          JSONObject requested =
+              restrictionPayload != null ? restrictionPayload.optJSONObject("restrictions") : null;
+          if (requested == null) {
+            ack.put("success", false);
+            ack.put("error", "missing_restrictions");
+            break;
+          }
+          JSONObject applyRes = UserRestrictionsManager.apply(context, requested);
+          boolean allOk = applyRes.optBoolean("all_ok", false);
+          ack.put("success", allOk);
+          ack.put("meta", applyRes);
+          break;
         case "set_location":
           JSONObject locationPayload = cmd.optJSONObject("payload");
           boolean locationEnabled =

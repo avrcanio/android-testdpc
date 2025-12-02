@@ -12,6 +12,11 @@ MANIFEST_DEBUG = "src/main/AndroidManifestDebug.xml"
 
 PACKAGE = "com.afwsamples.testdpc"
 
+config_setting(
+    name = "lite_mode",
+    values = {"define": "variant=lite"},
+)
+
 android_library(
     name = "androidx_deps",
     exports = [
@@ -91,7 +96,10 @@ android_library(
     custom_package = PACKAGE,
     javacopts = ["-Xep:AndroidJdkLibsChecker:OFF"],
     manifest = MANIFEST,
-    resource_files = glob(["src/main/res/**"]),
+    resource_files = glob(["src/main/res/**"]) + select({
+        ":lite_mode": glob(["src/lite/res/**"]),
+        "//conditions:default": glob(["src/dev/res/**"]),
+    }),
     deps = [
         ":aidl",
         ":androidx_deps",

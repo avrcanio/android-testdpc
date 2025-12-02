@@ -50,4 +50,8 @@ public class EnrolState {
   public String getMqttPassword() {
     return prefs.getString(KEY_MQTT_PASSWORD, null);
   }
+
+  public void setMqttPassword(String password) {
+    prefs.edit().putString(KEY_MQTT_PASSWORD, password).apply();
+  }
 }

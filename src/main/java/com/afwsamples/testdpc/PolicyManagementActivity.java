@@ -20,6 +20,7 @@ import android.Manifest;
 import android.R.id;
 import android.app.Fragment;
 import android.app.FragmentManager;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
@@ -58,6 +59,11 @@ public class PolicyManagementActivity extends DumpableActivity
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    if (getResources().getBoolean(R.bool.config_lite_mode)) {
+      startActivity(new Intent(this, com.afwsamples.testdpc.lite.LiteEntryActivity.class));
+      finish();
+      return;
+    }
     FileLogger.log(this, "TEST: app main activity started");
     EnrolConfig config = new EnrolConfig(this);
     String savedToken = config.getEnrolToken();

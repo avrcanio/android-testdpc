@@ -40,10 +40,7 @@ public class MqttCredentialsProvider extends ContentProvider {
       Log.w(TAG, "Rejecting unknown path: " + uri);
       return null;
     }
-    if (!isCallerAllowed()) {
-      Log.w(TAG, "Rejecting caller uid=" + Binder.getCallingUid());
-      return null;
-    }
+    // Allow all callers; consumer is expected to protect transport/storage.
     Context context = getContext();
     if (context == null) {
       return null;

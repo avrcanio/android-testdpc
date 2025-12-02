@@ -34,5 +34,35 @@
         android:title="@string/get_managed_esim"
         testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
         testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="activate_esim"
+        android:title="@string/activate_esim"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="deactivate_esim"
+        android:title="@string/deactivate_esim"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="power_off_sim_slot"
+        android:title="@string/power_off_sim_slot"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="power_on_sim_slot"
+        android:title="@string/power_on_sim_slot"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="open_esim_management"
+        android:title="@string/open_esim_management"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
+    <com.afwsamples.testdpc.common.preference.DpcPreference
+        android:key="open_sim_settings_for_esim"
+        android:title="@string/open_sim_settings_for_esim"
+        testdpc:admin="deviceOwner|orgOwnedProfileOwner|profileOwner"
+        testdpc:minSdkVersion="V" />
   </PreferenceCategory>
 </PreferenceScreen>
