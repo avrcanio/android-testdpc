@@ -23,8 +23,8 @@ Qbit-specific notes for this TestDPC fork. Core TestDPC docs stay in the upstrea
 3) Manual: open app, Policy Management; optional **Install Tailscale** action remains.
 
 Notes:
-- Downloads stream via `PackageInstaller` with no-cache headers.
-- If an APK install fails, we log and show toast (with support URL if provided).
+- Downloads stream via `PackageInstaller` with no-cache headers; APKs are buffered to a temp file (200MB guardrail) and SHA-256 is verified before install to avoid OOM.
+- If an APK install fails, we log and show toast (with support URL if provided). Manifest/package-name mismatches (e.g., payload says `org.telegram.messenger` but APK is `org.telegram.messenger.web`) will be rejected by PackageInstaller and reported in ACK error/meta.
 
 ## Build & deploy
 From `android-testdpc/`:
@@ -60,6 +60,56 @@ If Bazel cache is locked/corrupt: `bazel shutdown` then rebuild. Avoid `clean --
 - Inventory payload (in ACK meta and POST `/api/mdm/inventory`): list of `{ package, version_code, enabled_state, hidden, suspended, system_app, installer, first_install, last_update }` plus `request_id`, `timestamp`, `device_id` for the POST.
 - Headers: MDM calls send both `X-Device-Token` and `Authorization: Device <token>`.
 - Logging: requestId-tagged entries in logcat and `provision_log.txt`; inventory failures log server body on non-2xx.
+
+### DO command transport (`/api/mdm/inbox`, `/api/mdm/ack`)
+- Poll: POST `/api/mdm/inbox` with `X-Device-Token` and JSON body; include `{ "is_device_owner": true }` (optional) so backend can set DO flags. Response: `{ "results": [ { command objects... } ], "count": N }`.
+- Command shape: `id` (for ACK), `type`/`command_type`, `payload`, `audit` (traceability: `source`, `queued_at`, `requested_by`). Audit is for logs/UI, not required for execution.
+- Install payload: `package`, `install_type`, `release_id`, `release_file_id`, and `files` array (`url`, `kind` base/config/obb/apk, `sha256`, `version_code`, `version_name`). No legacy `file_type` field. Steps: download each file, verify SHA, install; use `release_file_id` for correlating logs or multi-APK handling.
+- Ack: POST `/api/mdm/ack` with `[{ "id": <command_id>, "success": true/false, "error": "...", "meta": {...} }]` and `X-Device-Token`. On failure include a human-readable `error` so operators see why it failed.
+- Poll cadence: use `poll_interval_sec` from enrolment (currently ~30s). Poll roughly every interval or immediately after finishing a command. Authentication is only the device token (no OAuth/Basic).
+- Optional metadata endpoints: `/api/mdm/policy` (GET) for policy fetch; `/api/mdm/post_inventory` (POST) and `/api/mdm/user-restrictions` (GET/POST) are inventory/reporting helpers but not required for install flow.
+- Install payload example:
+```json
+{
+  "id": 298,
+  "type": "install_apk_package",
+  "payload": {
+    "package": "com.tailscale.ipn",
+    "install_type": "install",
+    "files": [
+      {
+        "url": "https://qubitmdm.online/repo/apk/com.tailscale.ipn/510/Tailscale_VPN_1.90.8-tedc9d2245-gcf2f8cfec.apk",
+        "kind": "apk",
+        "sha256": "…",
+        "version_code": 510,
+        "version_name": "1.90.8…"
+      }
+    ],
+    "release_id": 6,
+    "release_file_id": 27,
+    "version_code": 510,
+    "version_name": "1.90.8…"
+  }
+}
+```
+- Example success:
+```bash
+curl -sk https://user-admin.tailnet.qubitsecured.online/api/mdm/inbox \
+  -H "Content-Type: application/json" \
+  -H "X-Device-Token: $DEVICE_TOKEN" \
+  -d '{"is_device_owner": true}'
+
+curl -sk https://user-admin.tailnet.qubitsecured.online/api/mdm/ack \
+  -H "Content-Type: application/json" \
+  -H "X-Device-Token: $DEVICE_TOKEN" \
+  -d '[{ "id": 298, "success": true }]'
+```
+- Summary flow (agent):
+  1. Device enrols and receives `device_id` + `device_token`.
+  2. Poll `/api/mdm/inbox` with token headers (optionally `is_device_owner`).
+  3. For each `install_apk_package`: iterate `payload.files`, download, verify SHA, install according to `kind` (base/config/obb), respect `install_type`, and use `release_file_id` for logging/correlation.
+  4. After processing, POST `/api/mdm/ack` with `{ id, success, error?, meta? }` (one object per command).
+  5. Repeat polling; server drops commands once acked.
 
 ## MQTT Core credentials handoff
 - Provider authority: `com.afwsamples.testdpc.mqttcredentials`, URI `content://com.afwsamples.testdpc.mqttcredentials/credentials`.

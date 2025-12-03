@@ -93,9 +93,7 @@ public final class MdmApiClient {
   public static JSONObject postAck(Context context, JSONArray commands) throws Exception {
     String token = new EnrolState(context).getDeviceToken();
     HttpURLConnection conn = open(context, "/ack", "POST", token);
-    JSONObject payload = new JSONObject();
-    payload.put("commands", commands);
-    byte[] bytes = payload.toString().getBytes("UTF-8");
+    byte[] bytes = commands.toString().getBytes("UTF-8");
     OutputStream os = conn.getOutputStream();
     os.write(bytes);
     os.flush();

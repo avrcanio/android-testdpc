@@ -1,8 +1,12 @@
 package com.afwsamples.testdpc.mdm;
 
+import android.app.PendingIntent;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentSender;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.os.Build;
@@ -12,19 +16,27 @@ import com.afwsamples.testdpc.DeviceAdminReceiver;
 import com.afwsamples.testdpc.EnrolState;
 import com.afwsamples.testdpc.FileLogger;
 import com.afwsamples.testdpc.common.PackageInstallationUtils;
+import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.mdm.InventoryReporter;
-import java.util.ArrayList;
-import java.util.Locale;
-import java.util.List;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import org.json.JSONException;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Runs a manual sync cycle against Qubit backend: policy -> inbox -> ack. */
 public final class MdmSyncManager {
   private static final String TAG = "MdmSyncManager";
+  private static final long MAX_APK_BYTES = 200L * 1024L * 1024L; // 200MB guardrail
 
   public interface SyncCallback {
     void onComplete(boolean success, String message);
@@ -61,8 +73,11 @@ public final class MdmSyncManager {
                       "Policy saved etag=" + etag + " poll=" + poll + " bodyLen=" + policyObj.length());
                 }
 
+                boolean isDeviceOwner = Util.isDeviceOwner(app);
+                JSONObject inboxBody = new JSONObject();
+                inboxBody.put("is_device_owner", isDeviceOwner);
                 JSONArray inbox =
-                    MdmApiClient.postInbox(app, new JSONObject()); // empty body per contract
+                    MdmApiClient.postInbox(app, inboxBody);
                 JSONArray ackList = new JSONArray();
                 if (inbox != null) {
                   log(app, requestId, "Inbox size=" + inbox.length());
@@ -120,27 +135,13 @@ public final class MdmSyncManager {
       switch (type) {
         case "install_apk_package":
           JSONObject payload = cmd.optJSONObject("payload");
-          String url = payload != null ? payload.optString("url", null) : null;
-          String pkg = payload != null ? payload.optString("package", null) : null;
-          String display = payload != null ? payload.optString("display_name", "") : "";
-          if (url == null) {
-            ack.put("success", false);
-            ack.put("error", "missing_url");
-            break;
+          JSONObject audit = cmd.optJSONObject("audit");
+          JSONObject installResult =
+              handleInstallCommand(context, payload, audit, requestId, ack.optLong("id", -1));
+          for (java.util.Iterator<String> it = installResult.keys(); it.hasNext(); ) {
+            String key = it.next();
+            ack.put(key, installResult.get(key));
           }
-          FileLogger.log(context, "MdmSync install start url=" + url + " pkg=" + pkg + " name=" + display);
-          InputStream in = downloadApk(context, url);
-          if (in == null) {
-            ack.put("success", false);
-            ack.put("error", "download_failed");
-            break;
-          }
-          PackageInstallationUtils.installPackage(context, in, pkg);
-          FileLogger.log(context, "MdmSync install invoked url=" + url + " pkg=" + pkg);
-          ack.put("success", true);
-          JSONArray inventoryInstall = InventoryReporter.collect(context);
-          ack.put("inventory", inventoryInstall);
-          maybePostInventory(context, inventoryInstall, requestId);
           break;
         case "uninstall_app":
           JSONObject uninstallPayload = cmd.optJSONObject("payload");
@@ -393,24 +394,298 @@ public final class MdmSyncManager {
     return ack;
   }
 
-  private static InputStream downloadApk(Context context, String urlStr) {
+  private static JSONObject handleInstallCommand(
+      Context context, JSONObject payload, JSONObject audit, String requestId, long commandId) {
+    JSONObject result = new JSONObject();
+    long start = System.currentTimeMillis();
+    JSONObject meta = new JSONObject();
+    JSONArray metaFiles = new JSONArray();
+
     try {
-      URL url = new URL(urlStr);
-      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-      conn.setConnectTimeout(15000);
-      conn.setReadTimeout(30000);
-      conn.setInstanceFollowRedirects(true);
-      conn.connect();
-      int code = conn.getResponseCode();
-      if (code >= 200 && code < 300) {
-        return conn.getInputStream();
+      if (payload == null) {
+        result.put("success", false);
+        result.put("error", "missing_payload");
+        result.put("meta", meta);
+        return result;
       }
-      FileLogger.log(context, "Download failed code=" + code + " url=" + urlStr);
-      conn.disconnect();
-    } catch (Exception e) {
-      FileLogger.log(context, "Download exception: " + e.getMessage());
+      String pkg = payload.optString("package", null);
+      String installType = payload.optString("install_type", "");
+      long releaseFileId = payload.optLong("release_file_id", -1);
+      JSONArray filesArray = payload.optJSONArray("files");
+      if (pkg == null) {
+        result.put("success", false);
+        result.put("error", "missing_package");
+        result.put("meta", meta);
+        return result;
+      }
+      if (filesArray == null || filesArray.length() == 0) {
+        result.put("success", false);
+        result.put("error", "missing_files");
+        result.put("meta", meta);
+        return result;
+      }
+
+      meta.put("package", pkg);
+      meta.put("install_type", installType);
+      if (releaseFileId > 0) {
+        meta.put("release_file_id", releaseFileId);
+      }
+
+      List<DownloadedFile> files = new ArrayList<>();
+      for (int i = 0; i < filesArray.length(); i++) {
+        JSONObject fileObj = filesArray.optJSONObject(i);
+        if (fileObj == null) {
+          continue;
+        }
+        String url = fileObj.optString("url", null);
+        String kind = fileObj.optString("kind", "apk");
+        String expectedSha = fileObj.optString("sha256", null);
+        int versionCode = fileObj.optInt("version_code", -1);
+        String versionName = fileObj.optString("version_name", null);
+        if (url == null) {
+          result.put("success", false);
+          result.put("error", "missing_url");
+          result.put("meta", meta);
+          return result;
+        }
+        try {
+          long dlStart = System.currentTimeMillis();
+          DownloadedFile file = downloadAndVerify(context, url, expectedSha, kind);
+          file.versionCode = versionCode;
+          file.versionName = versionName;
+          file.downloadMs = System.currentTimeMillis() - dlStart;
+          files.add(file);
+
+          JSONObject metaFile = new JSONObject();
+          metaFile.put("url", url);
+          metaFile.put("kind", kind);
+          metaFile.put("expected_sha256", expectedSha);
+          metaFile.put("actual_sha256", file.actualSha256);
+          metaFile.put("bytes", file.length);
+          metaFile.put("download_ms", file.downloadMs);
+          if (versionCode >= 0) {
+            metaFile.put("version_code", versionCode);
+          }
+          if (versionName != null) {
+            metaFile.put("version_name", versionName);
+          }
+          metaFiles.put(metaFile);
+        } catch (Exception e) {
+          result.put("success", false);
+          result.put("error", e.getMessage());
+          meta.put("files", metaFiles);
+          meta.put("install_duration_ms", System.currentTimeMillis() - start);
+          result.put("meta", meta);
+          return result;
+        }
+      }
+
+      try {
+        installApkFiles(context, pkg, files);
+        result.put("success", true);
+      } catch (Exception e) {
+        result.put("success", false);
+        result.put("error", e.getMessage());
+      }
+
+      meta.put("files", metaFiles);
+      if (audit != null) {
+        String source = audit.optString("source", null);
+        String requestedBy = audit.optString("requested_by", null);
+        if (source != null) {
+          meta.put("audit_source", source);
+        }
+        if (requestedBy != null) {
+          meta.put("requested_by", requestedBy);
+        }
+      }
+      meta.put("install_duration_ms", System.currentTimeMillis() - start);
+
+      if (result.optBoolean("success", false)) {
+        JSONArray inventoryInstall = InventoryReporter.collect(context);
+        meta.put("inventory", inventoryInstall);
+        maybePostInventory(context, inventoryInstall, requestId);
+      }
+
+      result.put("meta", meta);
+      return result;
+    } catch (JSONException e) {
+      try {
+        result.put("success", false);
+        result.put("error", e.getMessage());
+        result.put("meta", meta);
+      } catch (JSONException ignore) {
+        // ignore secondary failure
+      }
+      return result;
     }
-    return null;
+  }
+
+  private static void installApkFiles(Context context, String packageName, List<DownloadedFile> files)
+      throws IOException {
+    if (files == null || files.isEmpty()) {
+      throw new IOException("no_files_to_install");
+    }
+    PackageInstaller installer = context.getPackageManager().getPackageInstaller();
+    PackageInstaller.SessionParams params =
+        new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+    params.setAppPackageName(packageName);
+    int sessionId = installer.createSession(params);
+    PackageInstaller.Session session = installer.openSession(sessionId);
+    int idx = 0;
+    try {
+      for (DownloadedFile file : files) {
+        String entry = deriveEntryName(file.url, file.kind != null ? file.kind : "apk", idx++);
+        InputStream in = null;
+        java.io.OutputStream out = null;
+        try {
+          in = new FileInputStream(file.file);
+          long length = file.file.length();
+          out = session.openWrite(entry, 0, length);
+          byte[] buffer = new byte[65536];
+          int read;
+          while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+          }
+          session.fsync(out);
+        } finally {
+          if (in != null) {
+            in.close();
+          }
+          if (out != null) {
+            out.close();
+          }
+        }
+      }
+      session.commit(createInstallIntentSender(context, sessionId));
+    } finally {
+      session.close();
+      // cleanup temp files
+      for (DownloadedFile file : files) {
+        if (file.file != null && file.file.exists()) {
+          //noinspection ResultOfMethodCallIgnored
+          file.file.delete();
+        }
+      }
+    }
+  }
+
+  private static String deriveEntryName(String url, String kind, int index) {
+    try {
+      String path = new URL(url).getPath();
+      if (path != null) {
+        String[] parts = path.split("/");
+        String last = parts[parts.length - 1];
+        if (!last.isEmpty()) {
+          return last;
+        }
+      }
+    } catch (Exception ignore) {
+      // ignore and fall back
+    }
+    String suffix = "apk".equalsIgnoreCase(kind) ? ".apk" : ".pkg";
+    return "file_" + index + suffix;
+  }
+
+  private static DownloadedFile downloadAndVerify(
+      Context context, String urlStr, String expectedSha, String kind) throws Exception {
+    URL url = new URL(urlStr);
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setConnectTimeout(15000);
+    conn.setReadTimeout(45000);
+    conn.setInstanceFollowRedirects(true);
+    conn.setRequestProperty("Cache-Control", "no-cache");
+    conn.connect();
+    int code = conn.getResponseCode();
+    if (code < 200 || code >= 300) {
+      conn.disconnect();
+      throw new IOException("download_failed code=" + code);
+    }
+    long contentLength = conn.getContentLengthLong();
+    if (contentLength > 0 && contentLength > MAX_APK_BYTES) {
+      conn.disconnect();
+      throw new IOException("file_too_large bytes=" + contentLength);
+    }
+
+    File tmp =
+        File.createTempFile("mdm_dl_", ".apk", context.getCacheDir());
+    long written = 0;
+    String actualSha;
+    try (InputStream in = conn.getInputStream();
+        FileOutputStream out = new FileOutputStream(tmp)) {
+      MessageDigest md = MessageDigest.getInstance("SHA-256");
+      byte[] buf = new byte[65536];
+      int read;
+      while ((read = in.read(buf)) != -1) {
+        written += read;
+        if (written > MAX_APK_BYTES) {
+          throw new IOException("file_too_large bytes=" + written);
+        }
+        out.write(buf, 0, read);
+        md.update(buf, 0, read);
+      }
+      actualSha = hex(md.digest());
+      out.getFD().sync();
+    } catch (Exception e) {
+      // cleanup temp file on failure
+      if (tmp.exists()) {
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
+      }
+      throw e;
+    } finally {
+      conn.disconnect();
+    }
+
+    if (expectedSha != null
+        && !expectedSha.isEmpty()
+        && !expectedSha.equalsIgnoreCase(actualSha)) {
+      // cleanup before throwing
+      if (tmp.exists()) {
+        //noinspection ResultOfMethodCallIgnored
+        tmp.delete();
+      }
+      throw new IOException("sha256_mismatch expected=" + expectedSha + " actual=" + actualSha);
+    }
+
+    DownloadedFile file = new DownloadedFile();
+    file.url = urlStr;
+    file.kind = kind;
+    file.sha256 = expectedSha;
+    file.actualSha256 = actualSha;
+    file.file = tmp;
+    file.length = tmp.length();
+    return file;
+  }
+
+  private static String hex(byte[] data) {
+    StringBuilder sb = new StringBuilder();
+    for (byte b : data) {
+      sb.append(String.format("%02x", b));
+    }
+    return sb.toString();
+  }
+
+  private static IntentSender createInstallIntentSender(Context context, int sessionId) {
+    PendingIntent pendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            sessionId,
+            new Intent(PackageInstallationUtils.ACTION_INSTALL_COMPLETE),
+            PendingIntent.FLAG_IMMUTABLE);
+    return pendingIntent.getIntentSender();
+  }
+
+  private static final class DownloadedFile {
+    String url;
+    String kind;
+    String sha256;
+    String actualSha256;
+    String versionName;
+    int versionCode;
+    long downloadMs;
+    File file;
+    long length;
   }
 
   private static void log(Context context, String reqId, String msg) {
