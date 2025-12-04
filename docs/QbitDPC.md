@@ -64,7 +64,10 @@ If Bazel cache is locked/corrupt: `bazel shutdown` then rebuild. Avoid `clean --
 ### DO command transport (`/api/mdm/inbox`, `/api/mdm/ack`)
 - Poll: POST `/api/mdm/inbox` with `X-Device-Token` and JSON body; include `{ "is_device_owner": true }` (optional) so backend can set DO flags. Response: `{ "results": [ { command objects... } ], "count": N }`.
 - Command shape: `id` (for ACK), `type`/`command_type`, `payload`, `audit` (traceability: `source`, `queued_at`, `requested_by`). Audit is for logs/UI, not required for execution.
-- Install payload: `package`, `install_type`, `release_id`, `release_file_id`, and `files` array (`url`, `kind` base/config/obb/apk, `sha256`, `version_code`, `version_name`). No legacy `file_type` field. Steps: download each file, verify SHA, install; use `release_file_id` for correlating logs or multi-APK handling.
+- Install payload: `package`, `install_type`, `release_id`, `release_file_id`, and `files` array (`url`, `kind` base/config/obb/apk, `sha256`, `version_code`, `version_name`). No legacy `file_type` field. Steps: download each file (SHA verify, 200MB guardrail), then:
+  - If `files` length > 1: open a `PackageInstaller.Session` and write each part (base + config splits) before commit.
+  - If `files` length == 1: single APK install path.
+  - Log `package`, `release_file_id`, version, timing, and result; keep `release_file_id` unchanged in ACK/meta for backend correlation.
 - Ack: POST `/api/mdm/ack` with `[{ "id": <command_id>, "success": true/false, "error": "...", "meta": {...} }]` and `X-Device-Token`. On failure include a human-readable `error` so operators see why it failed.
 - Poll cadence: use `poll_interval_sec` from enrolment (currently ~30s). Poll roughly every interval or immediately after finishing a command. Authentication is only the device token (no OAuth/Basic).
 - Optional metadata endpoints: `/api/mdm/policy` (GET) for policy fetch; `/api/mdm/post_inventory` (POST) and `/api/mdm/user-restrictions` (GET/POST) are inventory/reporting helpers but not required for install flow.

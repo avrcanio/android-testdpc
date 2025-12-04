@@ -431,6 +431,11 @@ public final class MdmSyncManager {
         meta.put("release_file_id", releaseFileId);
       }
 
+      log(
+          context,
+          requestId,
+          "Install start pkg=" + pkg + " release_file_id=" + releaseFileId + " files=" + filesArray.length());
+
       List<DownloadedFile> files = new ArrayList<>();
       for (int i = 0; i < filesArray.length(); i++) {
         JSONObject fileObj = filesArray.optJSONObject(i);
@@ -483,9 +488,29 @@ public final class MdmSyncManager {
       try {
         installApkFiles(context, pkg, files);
         result.put("success", true);
+        log(
+            context,
+            requestId,
+            "Install done pkg="
+                + pkg
+                + " release_file_id="
+                + releaseFileId
+                + " files="
+                + files.size()
+                + " ms="
+                + (System.currentTimeMillis() - start));
       } catch (Exception e) {
         result.put("success", false);
         result.put("error", e.getMessage());
+        log(
+            context,
+            requestId,
+            "Install failed pkg="
+                + pkg
+                + " release_file_id="
+                + releaseFileId
+                + " err="
+                + e.getMessage());
       }
 
       meta.put("files", metaFiles);
