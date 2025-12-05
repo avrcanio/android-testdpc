@@ -47,6 +47,14 @@ public class EnrolState {
     return prefs.getString(KEY_DEVICE_TOKEN, null);
   }
 
+  public boolean isRotateRequired() {
+    return prefs.getBoolean(KEY_ROTATE_REQUIRED, false);
+  }
+
+  public void setRotateRequired(boolean rotateRequired) {
+    prefs.edit().putBoolean(KEY_ROTATE_REQUIRED, rotateRequired).apply();
+  }
+
   public String getMqttPassword() {
     return prefs.getString(KEY_MQTT_PASSWORD, null);
   }

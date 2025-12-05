@@ -61,6 +61,7 @@ public final class MdmSyncManager {
                 }
 
                 log(app, requestId, "Sync start");
+                FcmPushManager.sync(app);
                 JSONObject policyRoot = MdmApiClient.getPolicy(app);
                 JSONObject policyObj = policyRoot.optJSONObject("policy");
                 String etag = policyRoot.optString("policy_etag", null);

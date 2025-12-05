@@ -114,6 +114,52 @@ curl -sk https://user-admin.tailnet.qubitsecured.online/api/mdm/ack \
   4. After processing, POST `/api/mdm/ack` with `{ id, success, error?, meta? }` (one object per command).
   5. Repeat polling; server drops commands once acked.
 
+#### Multi-APK example (Signal base + configs)
+```json
+{
+  "id": 304,
+  "type": "install_apk_package",
+  "payload": {
+    "package": "org.thoughtcrime.securesms",
+    "install_type": "install",
+    "files": [
+      {
+        "url": "https://qubitmdm.online/repo/apk/org.thoughtcrime.securesms/162400/Signal_Base_7.66.4.apk",
+        "kind": "base",
+        "sha256": "1e810a02493f73c46bdfbcc130fb5fe61c56541e21fc53fe05f771d59b153feb",
+        "version_code": 162400,
+        "version_name": "7.66.4"
+      },
+      {
+        "url": "https://qubitmdm.online/repo/apk/org.thoughtcrime.securesms/162400/Signal_Config_162400_1.apk",
+        "kind": "config",
+        "sha256": "ec11796dc944193a410cd2ee964986d423ae80c3c3391987884e033dcbf4deb9",
+        "version_code": 162400,
+        "version_name": ""
+      },
+      {
+        "url": "https://qubitmdm.online/repo/apk/org.thoughtcrime.securesms/162400/Signal_Config_162400_2.apk",
+        "kind": "config",
+        "sha256": "b73a3e12feb3168310d8c0458761126ed5665e4888a668a9ac18965f89bcca7f",
+        "version_code": 162400,
+        "version_name": ""
+      }
+    ],
+    "release_id": 31,
+    "release_file_id": 34,
+    "version_code": 162400,
+    "version_name": "7.66.4"
+  }
+}
+```
+
+## Push token (FCM) handoff & backend registration
+- Core exposes FCM token via `content://com.qubit.mqttcore.fcm` (columns `token`, `updated_at`); call is gated to `com.afwsamples.testdpc` + Core. If missing, broadcast `com.qubit.mqttcore.ACTION_REFRESH_FCM_TOKEN` (target pkg `com.qubit.mqttcore`) and retry after Core refreshes.
+- DPC caches token in `qbit_push_token_state` (token, updated_at, enabled flag, last sync). Old token/long-lived sync triggers a POST to `/api/mdm/push-token` with headers `Authorization: Device <device_token>` + JSON `{ "token": "<fcm_token>", "platform": "fcm", "enabled": true }`.
+- 401/403 from backend marks enrol `rotate_required` (device_token likely rotated) and schedules retry; other HTTP/network errors back off via `JobScheduler` (`PushTokenJobService`) with exponential delays. Tag: `QbitDpcPush`.
+- After successful sync, token is mirrored to Core via application restrictions (`setApplicationRestrictions` on `com.qubit.mqttcore` with keys `fcm_registration_token`, `fcm_token_updated_at`) and broadcast `com.qubit.mqttcore.ACTION_FCM_TOKEN_REGISTERED`.
+- If token is intentionally empty/disabled, DPC posts `{ "enabled": true/false, "token": "" }`, writes an empty string to restrictions, and asks Core to generate a new one.
+
 ## MQTT Core credentials handoff
 - Provider authority: `com.afwsamples.testdpc.mqttcredentials`, URI `content://com.afwsamples.testdpc.mqttcredentials/credentials`.
 - Columns: `device_id`, `mqtt_password`.

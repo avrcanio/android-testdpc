@@ -140,6 +140,29 @@ public final class MdmApiClient {
     throw new Exception("POST /inventory failed code=" + code + " body=" + body);
   }
 
+  public static JSONObject postPushToken(Context context, String fcmToken, boolean enabled)
+      throws Exception {
+    String token = new EnrolState(context).getDeviceToken();
+    HttpURLConnection conn = open(context, "/push-token", "POST", token);
+    JSONObject payload = new JSONObject();
+    payload.put("token", fcmToken);
+    payload.put("platform", "fcm");
+    payload.put("enabled", enabled);
+    byte[] bytes = payload.toString().getBytes("UTF-8");
+    OutputStream os = conn.getOutputStream();
+    os.write(bytes);
+    os.flush();
+    os.close();
+    int code = conn.getResponseCode();
+    String body = readBody(conn, code);
+    conn.disconnect();
+    log(context, "POST /push-token code=" + code + " bodyLen=" + (body == null ? 0 : body.length()));
+    if (code >= 200 && code < 300) {
+      return body != null && !body.isEmpty() ? new JSONObject(body) : null;
+    }
+    throw new HttpException(code, body);
+  }
+
   public static JSONObject postMqttCredentials(Context context) throws Exception {
     String token = new EnrolState(context).getDeviceToken();
     HttpURLConnection conn = open(context, "/mqtt/credentials", "POST", token);
@@ -151,6 +174,17 @@ public final class MdmApiClient {
       return new JSONObject(body);
     }
     throw new Exception("POST /mqtt/credentials failed code=" + code + " body=" + body);
+  }
+
+  public static final class HttpException extends Exception {
+    public final int code;
+    public final String body;
+
+    HttpException(int code, String body) {
+      super("http_" + code);
+      this.code = code;
+      this.body = body;
+    }
   }
 
   private static void log(Context context, String msg) {

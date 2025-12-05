@@ -8,6 +8,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
 import com.afwsamples.testdpc.common.Util;
+import com.afwsamples.testdpc.mdm.FcmPushManager;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -160,6 +161,7 @@ public class EnrolApiClient {
         Intent intent = new Intent(ACTION_ENROL_STATE_UPDATED);
         intent.setPackage(appContext.getPackageName());
         appContext.sendBroadcast(intent);
+        FcmPushManager.syncAsync(appContext);
       } else {
         result.errorMessage = "http_" + result.responseCode;
         if (result.responseBody != null) {
