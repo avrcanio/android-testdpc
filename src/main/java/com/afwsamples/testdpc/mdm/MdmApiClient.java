@@ -140,6 +140,57 @@ public final class MdmApiClient {
     throw new Exception("POST /inventory failed code=" + code + " body=" + body);
   }
 
+  public static JSONObject postLockScreenState(Context context, JSONObject payload) throws Exception {
+    if (payload == null) {
+      return null;
+    }
+    String token = new EnrolState(context).getDeviceToken();
+    HttpURLConnection conn = open(context, "/lock-screen/state", "POST", token);
+    byte[] bytes = payload.toString().getBytes("UTF-8");
+    OutputStream os = conn.getOutputStream();
+    os.write(bytes);
+    os.flush();
+    os.close();
+    int code = conn.getResponseCode();
+    String body = readBody(conn, code);
+    conn.disconnect();
+    log(context, "POST /lock-screen/state code=" + code + " bodyLen=" + (body == null ? 0 : body.length()));
+    if (code >= 200 && code < 300) {
+      return body != null && !body.isEmpty() ? new JSONObject(body) : null;
+    }
+    throw new Exception("POST /lock-screen/state failed code=" + code + " body=" + body);
+  }
+
+  public static JSONObject postPasswordChangeState(
+      Context context, String requestId, boolean passwordChanged, String status) throws Exception {
+    String token = new EnrolState(context).getDeviceToken();
+    HttpURLConnection conn = open(context, "/password-change/state", "POST", token);
+    JSONObject payload = new JSONObject();
+    if (requestId != null) {
+      payload.put("request_id", requestId);
+    }
+    payload.put("timestamp", System.currentTimeMillis() / 1000);
+    payload.put("password_changed", passwordChanged);
+    if (status != null) {
+      payload.put("status", status);
+    }
+    byte[] bytes = payload.toString().getBytes("UTF-8");
+    OutputStream os = conn.getOutputStream();
+    os.write(bytes);
+    os.flush();
+    os.close();
+    int code = conn.getResponseCode();
+    String body = readBody(conn, code);
+    conn.disconnect();
+    log(
+        context,
+        "POST /password-change/state code=" + code + " bodyLen=" + (body == null ? 0 : body.length()));
+    if (code >= 200 && code < 300) {
+      return body != null && !body.isEmpty() ? new JSONObject(body) : null;
+    }
+    throw new Exception("POST /password-change/state failed code=" + code + " body=" + body);
+  }
+
   public static JSONObject postPushToken(Context context, String fcmToken, boolean enabled)
       throws Exception {
     String token = new EnrolState(context).getDeviceToken();

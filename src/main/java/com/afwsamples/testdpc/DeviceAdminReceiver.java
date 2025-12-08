@@ -41,6 +41,7 @@ import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.provision.PostProvisioningTask;
 import com.afwsamples.testdpc.FileLogger;
 import com.afwsamples.testdpc.EnrolConfig;
+import com.afwsamples.testdpc.mdm.MdmSyncManager;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -535,6 +536,7 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
   public void onPasswordChanged(Context context, Intent intent, UserHandle user) {
     if (Process.myUserHandle().equals(user)) {
       updatePasswordConstraintNotification(context);
+      MdmSyncManager.onPasswordChanged(context);
     }
   }
 
