@@ -37,8 +37,14 @@ If Bazel cache is locked/corrupt: `bazel shutdown` then rebuild. Avoid `clean --
 
 ### Lite mode (field devices)
 - Flag `config_lite_mode` controls behaviour (default false). Bazel select picks `src/lite/res/**` when `--define variant=lite`, otherwise `src/dev/res/**` keeps full app.
-- Lite build lansira `LiteEntryActivity` direktno: prikazuje Device ID (iz enrol state), spremljeni enrol token, te tipke **Enrol** (poziva `EnrolApiClient.enrolWithSavedToken`) i **Refresh** (ponovno učitava ID/token). Ostali Policy Management UI je skriven.
+- Lite build lansira `LiteEntryActivity` direktno: prikazuje Device ID (iz enrol state), spremljeni enrol token, te tipke **Enrol** (poziva `EnrolApiClient.enrolWithSavedToken`), **Enrol All** (jednokratni orkestrirani flow) i **Refresh** (ponovno učitava ID/token). Ostali Policy Management UI je skriven.
 - Dev build (`bazel build //:testdpc`) ostaje nepromijenjen.
+
+#### Enrol All flow (lite)
+- Preduvjet: app je Device Owner; ako `device_id` već postoji u `EnrolState`, gumb je onemogućen (“Enrol done”).
+- Koraci: clear app data `com.tailscale.ipn` → refresh provisioning extras (`/api/provisioning/extras`) → primijeni Tailscale restrikcije i pokreni Tailscale → čeka Tailnet VPN (poll ~3s, timeout 90s). Gumb se u čekanju mijenja u **Check VPN** (ručni klik pokreće istu provjeru).
+- Kad VPN detektiran: AuthKey se briše iz `EnrolConfig`, application restrictions i `tailscale_config.json`, zatim se pozove `EnrolApiClient.enrolWithSavedToken(...)`.
+- Nakon završetka enrola gumb ostaje onemogućen (“Enrol done”) dok se app ponovo ne instalira/počisti state. Partial states (clear/refresh/enrol u tijeku) privremeno onemogućavaju gumb.
 
 ## Provisioning logging & enrol
 - Logging: `DeviceAdminReceiver`, `ProvisioningSuccessActivity`, `FinalizeActivity`, and `PolicyManagementActivity` log admin extras and enrol tokens to `provision_log.txt` (`/data/user/0/com.afwsamples.testdpc/files`).

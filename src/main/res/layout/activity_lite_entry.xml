@@ -62,6 +62,13 @@
     </LinearLayout>
 
     <Button
+        android:id="@+id/enrol_all_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/lite_enrol_all_button" />
+
+    <Button
         android:id="@+id/sync_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -74,5 +81,19 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:text="@string/mqtt_refresh_button" />
+
+    <Button
+        android:id="@+id/tailscale_config_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/tailscale_config_button" />
+
+    <Button
+        android:id="@+id/refresh_extras_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/refresh_extras_button" />
 
 </LinearLayout>

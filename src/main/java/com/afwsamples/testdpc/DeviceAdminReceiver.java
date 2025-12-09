@@ -91,8 +91,12 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
           intent.getBundleExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
       if (adminExtras != null) {
         FileLogger.log(context, "onReceive: adminExtras keys=" + adminExtras.keySet());
-        String enrolToken = adminExtras.getString("enrol_token");
-        String apkIndexUrl = adminExtras.getString("apk_index_url");
+      String enrolToken = adminExtras.getString("enrol_token");
+      String apkIndexUrl = adminExtras.getString("apk_index_url");
+      String tsLoginUrl = adminExtras.getString("LoginURL");
+      String tsControlUrl = adminExtras.getString("ControlURL");
+      String tsAuthKey = adminExtras.getString("AuthKey");
+      String tsHostname = adminExtras.getString("Hostname");
         FileLogger.log(context, "onReceive: enrol_token=" + enrolToken);
         FileLogger.log(context, "onReceive: apk_index_url=" + apkIndexUrl);
         EnrolConfig config = new EnrolConfig(context);
@@ -102,6 +106,18 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
         if (apkIndexUrl != null) {
           config.saveApkIndexUrl(apkIndexUrl);
         }
+      if (tsLoginUrl != null) {
+        config.saveTailscaleLoginUrl(tsLoginUrl);
+      }
+      if (tsControlUrl != null) {
+        config.saveTailscaleControlUrl(tsControlUrl);
+      }
+      if (tsAuthKey != null) {
+        config.saveTailscaleAuthKey(tsAuthKey);
+      }
+      if (tsHostname != null) {
+        config.saveTailscaleHostname(tsHostname);
+      }
       } else {
         FileLogger.log(context, "onReceive: NO adminExtras bundle");
       }
@@ -183,6 +199,10 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
           context, "onProfileProvisioningComplete: adminExtras keys=" + adminExtras.keySet());
       String enrolToken = adminExtras.getString("enrol_token");
       String apkIndexUrl = adminExtras.getString("apk_index_url");
+      String tsLoginUrl = adminExtras.getString("LoginURL");
+      String tsControlUrl = adminExtras.getString("ControlURL");
+      String tsAuthKey = adminExtras.getString("AuthKey");
+      String tsHostname = adminExtras.getString("Hostname");
       FileLogger.log(context, "onProfileProvisioningComplete: enrol_token=" + enrolToken);
       FileLogger.log(context, "onProfileProvisioningComplete: apk_index_url=" + apkIndexUrl);
       EnrolConfig config = new EnrolConfig(context);
@@ -191,6 +211,18 @@ public class DeviceAdminReceiver extends android.app.admin.DeviceAdminReceiver {
       }
       if (apkIndexUrl != null) {
         config.saveApkIndexUrl(apkIndexUrl);
+      }
+      if (tsLoginUrl != null) {
+        config.saveTailscaleLoginUrl(tsLoginUrl);
+      }
+      if (tsControlUrl != null) {
+        config.saveTailscaleControlUrl(tsControlUrl);
+      }
+      if (tsAuthKey != null) {
+        config.saveTailscaleAuthKey(tsAuthKey);
+      }
+      if (tsHostname != null) {
+        config.saveTailscaleHostname(tsHostname);
       }
       if (supportUrl != null) {
         config.saveSupportUrl(supportUrl);

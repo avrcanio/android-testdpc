@@ -65,15 +65,32 @@ public class FinalizeActivity extends Activity {
     if (adminExtras != null) {
       enrolToken = adminExtras.getString("enrol_token");
       apkIndexUrl = adminExtras.getString("apk_index_url");
+      String tsLoginUrl = adminExtras.getString("LoginURL");
+      String tsAuthKey = adminExtras.getString("AuthKey");
+      String tsHostname = adminExtras.getString("Hostname");
 
       FileLogger.log(this, "FinalizeActivity: adminExtras keys = " + adminExtras.keySet());
       FileLogger.log(this, "FinalizeActivity: enrol_token = " + enrolToken);
       FileLogger.log(this, "FinalizeActivity: apk_index_url = " + apkIndexUrl);
+      FileLogger.log(this, "FinalizeActivity: tailscale LoginURL = " + tsLoginUrl);
+      FileLogger.log(this, "FinalizeActivity: tailscale Hostname = " + tsHostname);
 
+      EnrolConfig config = new EnrolConfig(this);
       if (enrolToken != null) {
-        EnrolConfig config = new EnrolConfig(this);
         config.saveEnrolToken(enrolToken);
         FileLogger.log(this, "FinalizeActivity: enrol_token saved to prefs");
+      }
+      if (apkIndexUrl != null) {
+        config.saveApkIndexUrl(apkIndexUrl);
+      }
+      if (tsLoginUrl != null) {
+        config.saveTailscaleLoginUrl(tsLoginUrl);
+      }
+      if (tsAuthKey != null) {
+        config.saveTailscaleAuthKey(tsAuthKey);
+      }
+      if (tsHostname != null) {
+        config.saveTailscaleHostname(tsHostname);
       }
     } else {
       FileLogger.log(this, "FinalizeActivity: NO adminExtras bundle in intent");
