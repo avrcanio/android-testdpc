@@ -62,6 +62,8 @@ maven_install(
         "androidx.test:monitor:1.6.0",
         "androidx.test:runner:1.5.0",
         "androidx.window:window:1.2.0",
+        "com.hivemq:hivemq-mqtt-client:1.3.3",
+        "io.netty:netty-all:4.1.63.Final",
         "com.google.android.material:material:1.6.1",
         "com.google.guava:guava:31.1-android",
         "com.google.testparameterinjector:test-parameter-injector:1.15",

@@ -20,18 +20,29 @@ import android.Manifest;
 import android.R.id;
 import android.app.Fragment;
 import android.app.FragmentManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.afwsamples.testdpc.EnrolConfig;
+import com.afwsamples.testdpc.EnrolState;
+import com.afwsamples.testdpc.lite.LiteMqttConfig;
+import com.afwsamples.testdpc.lite.LiteMqttService;
 import com.afwsamples.testdpc.mdm.MdmSyncManager;
 import com.afwsamples.testdpc.common.DumpableActivity;
 import com.afwsamples.testdpc.common.OnBackPressedHandler;
@@ -55,6 +66,17 @@ public class PolicyManagementActivity extends DumpableActivity
   private static final String LOCK_MODE_ACTION_STOP = "stop";
 
   private boolean mLockTaskMode;
+  private EditText mqttHostField;
+  private EditText mqttPortField;
+  private EditText mqttPathField;
+  private EditText mqttUserField;
+  private EditText mqttPassField;
+  private EditText mqttQidField;
+  private EditText mqttClientIdField;
+  private CheckBox mqttTlsField;
+  private TextView mqttStatusView;
+  private BroadcastReceiver mqttStatusReceiver;
+  private boolean mqttUiInitialized = false;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -69,6 +91,7 @@ public class PolicyManagementActivity extends DumpableActivity
     String savedToken = config.getEnrolToken();
     FileLogger.log(this, "TEST: saved enrol_token from prefs = " + savedToken);
     setContentView(R.layout.activity_main);
+    setupMqttUi();
     if (savedInstanceState == null) {
       getFragmentManager()
           .beginTransaction()
@@ -77,6 +100,121 @@ public class PolicyManagementActivity extends DumpableActivity
           .commit();
     }
     getFragmentManager().addOnBackStackChangedListener(this);
+  }
+
+  private void setupMqttUi() {
+    mqttHostField = findViewById(R.id.mqtt_host);
+    mqttStatusView = findViewById(R.id.mqtt_status);
+    if (mqttHostField == null || mqttStatusView == null) {
+      mqttUiInitialized = false;
+      return;
+    }
+    mqttUiInitialized = true;
+    mqttPortField = findViewById(R.id.mqtt_port);
+    mqttPathField = findViewById(R.id.mqtt_path);
+    mqttUserField = findViewById(R.id.mqtt_user);
+    mqttPassField = findViewById(R.id.mqtt_pass);
+    mqttQidField = findViewById(R.id.mqtt_qid);
+    mqttClientIdField = findViewById(R.id.mqtt_client_id);
+    mqttTlsField = findViewById(R.id.mqtt_tls);
+    Button startButton = findViewById(R.id.mqtt_start_button);
+    Button stopButton = findViewById(R.id.mqtt_stop_button);
+
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    EnrolState enrolState = new EnrolState(this);
+    mqttHostField.setText(cfg.getHost());
+    mqttPortField.setText(String.valueOf(cfg.getPort()));
+    mqttPathField.setText(cfg.getPath());
+    String deviceId = enrolState.getDeviceId();
+    String savedUser = cfg.getUsername();
+    String savedQid = cfg.getQid();
+    mqttUserField.setText(savedUser != null ? savedUser : deviceId);
+    mqttQidField.setText(savedQid != null ? savedQid : deviceId);
+    String savedPassword = cfg.getPassword();
+    mqttPassField.setText(savedPassword != null ? savedPassword : enrolState.getMqttPassword());
+    mqttClientIdField.setText(cfg.getClientId());
+    mqttTlsField.setChecked(cfg.isTlsEnabled());
+    mqttStatusView.setText(getString(R.string.mqtt_status_placeholder));
+
+    startButton.setOnClickListener(
+        (View v) -> {
+          saveMqttConfig(cfg);
+          Intent startIntent = new Intent(this, LiteMqttService.class);
+          startIntent.setAction(LiteMqttService.ACTION_START);
+          startService(startIntent);
+        });
+    stopButton.setOnClickListener(
+        (View v) -> {
+          saveMqttConfig(cfg);
+          Intent stopIntent = new Intent(this, LiteMqttService.class);
+          stopIntent.setAction(LiteMqttService.ACTION_STOP);
+          startService(stopIntent);
+        });
+    mqttStatusReceiver =
+        new BroadcastReceiver() {
+          @Override
+          public void onReceive(Context context, Intent intent) {
+            String status = intent.getStringExtra(LiteMqttService.EXTRA_STATUS);
+            String error = intent.getStringExtra(LiteMqttService.EXTRA_ERROR);
+            updateMqttStatus(status, error);
+          }
+        };
+  }
+
+  private void saveMqttConfig(LiteMqttConfig cfg) {
+    if (!mqttUiInitialized) {
+      return;
+    }
+    cfg.setHost(mqttHostField.getText().toString().trim());
+    cfg.setPort(parsePort(mqttPortField.getText().toString().trim()));
+    cfg.setPath(mqttPathField.getText().toString().trim());
+    cfg.setUsername(mqttUserField.getText().toString().trim());
+    cfg.setPassword(mqttPassField.getText().toString());
+    cfg.setQid(mqttQidField.getText().toString().trim());
+    cfg.setClientId(mqttClientIdField.getText().toString().trim());
+    cfg.setTlsEnabled(mqttTlsField.isChecked());
+  }
+
+  private void updateMqttStatus(String status, String error) {
+    if (!mqttUiInitialized || mqttStatusView == null) {
+      return;
+    }
+    if (error != null && !error.isEmpty()) {
+      mqttStatusView.setText(status + " (" + error + ")");
+    } else {
+      mqttStatusView.setText(status);
+    }
+  }
+
+  private void registerMqttReceiver() {
+    if (!mqttUiInitialized || mqttStatusReceiver == null) {
+      return;
+    }
+    IntentFilter filter = new IntentFilter(LiteMqttService.ACTION_STATUS_BROADCAST);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(mqttStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+    } else {
+      registerReceiver(mqttStatusReceiver, filter);
+    }
+  }
+
+  private void unregisterMqttReceiver() {
+    if (!mqttUiInitialized || mqttStatusReceiver == null) {
+      return;
+    }
+    try {
+      unregisterReceiver(mqttStatusReceiver);
+    } catch (IllegalArgumentException ignore) {
+      // receiver not registered
+    }
+  }
+
+  private int parsePort(String value) {
+    try {
+      return Integer.parseInt(value);
+    } catch (NumberFormatException e) {
+      return LiteMqttConfig.DEFAULT_PORT;
+    }
   }
 
   @Override
@@ -120,6 +258,7 @@ public class PolicyManagementActivity extends DumpableActivity
   @Override
   protected void onResume() {
     super.onResume();
+    registerMqttReceiver();
 
     String lockModeCommand = getIntent().getStringExtra(CMD_LOCK_TASK_MODE);
     if (lockModeCommand != null) {
@@ -127,6 +266,12 @@ public class PolicyManagementActivity extends DumpableActivity
     }
 
     askNotificationPermission();
+  }
+
+  @Override
+  protected void onPause() {
+    super.onPause();
+    unregisterMqttReceiver();
   }
 
   @Override
@@ -149,6 +294,7 @@ public class PolicyManagementActivity extends DumpableActivity
 
   @Override
   public void onDestroy() {
+    unregisterMqttReceiver();
     super.onDestroy();
     getFragmentManager().removeOnBackStackChangedListener(this);
   }

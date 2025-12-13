@@ -19,8 +19,8 @@
     xmlns:tools="http://schemas.android.com/tools"
           package="com.afwsamples.testdpc"
           tools:ignore="MissingClass"
-    android:versionCode="9015"
-    android:versionName="9.0.15">
+    android:versionCode="9017"
+    android:versionName="9.0.17">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
@@ -31,6 +31,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -54,6 +55,21 @@
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_MOBILE_NETWORK"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_MODIFY_USERS"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_PACKAGE_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
+    <uses-permission android:name="android.permission.ACCESS_DATA_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.MANAGE_SIM_CARDS"/>
+    <uses-permission android:name="android.permission.MANAGE_EUICC"/>
+    <uses-permission android:name="android.permission.WRITE_EMBEDDED_SUBSCRIPTIONS"/>
+    <uses-permission android:name="android.permission.READ_PRIVILEGED_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_PROTECTED_APPS"/>
+    <uses-permission android:name="android.permission.MANAGE_WIFI_INTERFACES"/>
+    <uses-permission android:name="android.permission.MANAGE_WIFI_DISPLAY"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.SET_ALARM"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_RESTRICT_PRIVATE_DNS"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_CAMERA_TOGGLE"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_SAFE_BOOT"/>
@@ -64,6 +80,11 @@
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_WALLPAPER"/>
     <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_WIFI"/>
     <uses-permission android:name="android.permission.UPDATE_DEVICE_MANAGEMENT_RESOURCES"/>
+    <uses-permission android:name="android.permission.MANAGE_WIFI_WHEN_WIRELESS_CONNECTIVITY_CHANGES"/>
+    <uses-permission android:name="android.permission.NETWORK_SETTINGS"/>
+    <uses-permission android:name="android.permission.OVERRIDE_WIFI_CONFIG"/>
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
 
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
@@ -151,6 +172,11 @@
                 android:name=".mdm.PushTokenJobService"
                 android:permission="android.permission.BIND_JOB_SERVICE"
                 android:exported="false" />
+
+        <service
+                android:name=".lite.LiteMqttService"
+                android:exported="false"
+                android:foregroundServiceType="dataSync" />
 
         <activity
                 android:name=".policy.locktask.KioskModeActivity"

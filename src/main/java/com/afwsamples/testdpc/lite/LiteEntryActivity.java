@@ -18,6 +18,8 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.BufferedReader;
@@ -28,6 +30,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Consumer;
 import org.json.JSONObject;
 import com.afwsamples.testdpc.EnrolApiClient;
 import com.afwsamples.testdpc.EnrolConfig;
@@ -35,6 +38,8 @@ import com.afwsamples.testdpc.EnrolState;
 import com.afwsamples.testdpc.R;
 import com.afwsamples.testdpc.DeviceAdminReceiver;
 import com.afwsamples.testdpc.mdm.MdmSyncManager;
+import com.afwsamples.testdpc.lite.LiteMqttConfig;
+import com.afwsamples.testdpc.lite.LiteMqttService;
 
 /**
  * Minimal launcher for field devices: shows enrol info and triggers enrol call.
@@ -60,7 +65,21 @@ public class LiteEntryActivity extends Activity {
   private TextView mDeviceIdView;
   private TextView mEnrolTokenView;
   private Button mEnrolAllButton;
+  private EditText mqttHostField;
+  private EditText mqttPortField;
+  private EditText mqttPathField;
+  private EditText mqttUserField;
+  private EditText mqttPassField;
+  private EditText mqttQidField;
+  private EditText mqttClientIdField;
+  private CheckBox mqttTlsField;
+  private TextView mqttStatusView;
+  private BroadcastReceiver mqttStatusReceiver;
+  private Button mTailscaleButton;
+  private boolean mqttUiInitialized = false;
   private Handler mHandler;
+  private boolean mTailscaleBusy = false;
+  private Runnable mAuthKeyCleanupRunnable;
   private EnrolAllStep mEnrolAllStep = EnrolAllStep.IDLE;
   private long mVpnWaitDeadlineMs = 0L;
 
@@ -95,8 +114,11 @@ public class LiteEntryActivity extends Activity {
     Button refreshButton = findViewById(R.id.refresh_button);
     Button syncButton = findViewById(R.id.sync_button);
     Button mqttRefreshButton = findViewById(R.id.mqtt_refresh_button);
-    Button tailscaleButton = findViewById(R.id.tailscale_config_button);
+    Button mqttStartButton = findViewById(R.id.mqtt_start_button);
+    Button mqttStopButton = findViewById(R.id.mqtt_stop_button);
+    mTailscaleButton = findViewById(R.id.tailscale_config_button);
     Button refreshExtrasButton = findViewById(R.id.refresh_extras_button);
+    setupMqttUi();
     enrolButton.setOnClickListener(
         (View v) -> EnrolApiClient.enrolWithSavedToken(LiteEntryActivity.this));
     mEnrolAllButton.setOnClickListener((View v) -> handleEnrolAllButton());
@@ -104,7 +126,23 @@ public class LiteEntryActivity extends Activity {
     syncButton.setOnClickListener((View v) -> triggerSync());
     mqttRefreshButton.setOnClickListener(
         (View v) -> com.afwsamples.testdpc.mdm.MqttCredentialRefresher.refresh(this));
-    tailscaleButton.setOnClickListener((View v) -> applyTailscaleConfigAndLaunch());
+    mqttStartButton.setOnClickListener(
+        (View v) -> {
+          LiteMqttConfig cfg = new LiteMqttConfig(this);
+          saveMqttConfig(cfg);
+          Intent startIntent = new Intent(this, LiteMqttService.class);
+          startIntent.setAction(LiteMqttService.ACTION_START);
+          startService(startIntent);
+        });
+    mqttStopButton.setOnClickListener(
+        (View v) -> {
+          LiteMqttConfig cfg = new LiteMqttConfig(this);
+          saveMqttConfig(cfg);
+          Intent stopIntent = new Intent(this, LiteMqttService.class);
+          stopIntent.setAction(LiteMqttService.ACTION_STOP);
+          startService(stopIntent);
+        });
+    mTailscaleButton.setOnClickListener((View v) -> applyTailscaleConfigAndLaunch());
     refreshExtrasButton.setOnClickListener((View v) -> refreshProvisioningExtras());
     if (savedInstanceState != null) {
       String savedStep = savedInstanceState.getString(STATE_STEP, EnrolAllStep.IDLE.name());
@@ -122,6 +160,7 @@ public class LiteEntryActivity extends Activity {
   @Override
   protected void onDestroy() {
     stopVpnPolling();
+    unregisterMqttReceiver();
     try {
       unregisterReceiver(mEnrolStateReceiver);
     } catch (IllegalArgumentException ignore) {
@@ -144,6 +183,13 @@ public class LiteEntryActivity extends Activity {
       startVpnPolling();
     }
     updateEnrolAllUi();
+    registerMqttReceiver();
+  }
+
+  @Override
+  protected void onPause() {
+    super.onPause();
+    unregisterMqttReceiver();
   }
 
   private void refreshFields() {
@@ -159,6 +205,106 @@ public class LiteEntryActivity extends Activity {
     }
   }
 
+  private void setupMqttUi() {
+    mqttHostField = findViewById(R.id.mqtt_host);
+    mqttStatusView = findViewById(R.id.mqtt_status);
+    if (mqttHostField == null || mqttStatusView == null) {
+      mqttUiInitialized = false;
+      return;
+    }
+    mqttUiInitialized = true;
+    mqttPortField = findViewById(R.id.mqtt_port);
+    mqttPathField = findViewById(R.id.mqtt_path);
+    mqttUserField = findViewById(R.id.mqtt_user);
+    mqttPassField = findViewById(R.id.mqtt_pass);
+    mqttQidField = findViewById(R.id.mqtt_qid);
+    mqttClientIdField = findViewById(R.id.mqtt_client_id);
+    mqttTlsField = findViewById(R.id.mqtt_tls);
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    EnrolState enrolState = new EnrolState(this);
+    mqttHostField.setText(cfg.getHost());
+    mqttPortField.setText(String.valueOf(cfg.getPort()));
+    mqttPathField.setText(cfg.getPath());
+    String deviceId = enrolState.getDeviceId();
+    String savedUser = cfg.getUsername();
+    String savedQid = cfg.getQid();
+    mqttUserField.setText(savedUser != null ? savedUser : deviceId);
+    mqttQidField.setText(savedQid != null ? savedQid : deviceId);
+    String savedPassword = cfg.getPassword();
+    mqttPassField.setText(savedPassword != null ? savedPassword : enrolState.getMqttPassword());
+    mqttClientIdField.setText(cfg.getClientId());
+    mqttTlsField.setChecked(cfg.isTlsEnabled());
+    mqttStatusView.setText(getString(R.string.mqtt_status_placeholder));
+    mqttStatusReceiver =
+        new BroadcastReceiver() {
+          @Override
+          public void onReceive(Context context, Intent intent) {
+            String status = intent.getStringExtra(LiteMqttService.EXTRA_STATUS);
+            String error = intent.getStringExtra(LiteMqttService.EXTRA_ERROR);
+            updateMqttStatus(status, error);
+          }
+        };
+  }
+
+  private void saveMqttConfig(LiteMqttConfig cfg) {
+    if (!mqttUiInitialized) {
+      return;
+    }
+    cfg.setHost(mqttHostField.getText().toString().trim());
+    cfg.setPort(parsePort(mqttPortField.getText().toString().trim()));
+    cfg.setPath(mqttPathField.getText().toString().trim());
+    cfg.setUsername(mqttUserField.getText().toString().trim());
+    cfg.setPassword(mqttPassField.getText().toString());
+    cfg.setQid(mqttQidField.getText().toString().trim());
+    cfg.setClientId(mqttClientIdField.getText().toString().trim());
+    cfg.setTlsEnabled(mqttTlsField.isChecked());
+  }
+
+  private void updateMqttStatus(String status, String error) {
+    if (!mqttUiInitialized || mqttStatusView == null) {
+      return;
+    }
+    runOnUiThread(
+        () -> {
+          if (error != null && !error.isEmpty()) {
+            mqttStatusView.setText(status + " (" + error + ")");
+          } else {
+            mqttStatusView.setText(status);
+          }
+        });
+  }
+
+  private void registerMqttReceiver() {
+    if (!mqttUiInitialized || mqttStatusReceiver == null) {
+      return;
+    }
+    IntentFilter filter = new IntentFilter(LiteMqttService.ACTION_STATUS_BROADCAST);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(mqttStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+    } else {
+      registerReceiver(mqttStatusReceiver, filter);
+    }
+  }
+
+  private void unregisterMqttReceiver() {
+    if (!mqttUiInitialized || mqttStatusReceiver == null) {
+      return;
+    }
+    try {
+      unregisterReceiver(mqttStatusReceiver);
+    } catch (IllegalArgumentException ignore) {
+      // receiver not registered
+    }
+  }
+
+  private int parsePort(String value) {
+    try {
+      return Integer.parseInt(value);
+    } catch (NumberFormatException e) {
+      return LiteMqttConfig.DEFAULT_PORT;
+    }
+  }
+
   private void triggerSync() {
     MdmSyncManager.syncNow(
         this,
@@ -169,19 +315,94 @@ public class LiteEntryActivity extends Activity {
                             LiteEntryActivity.this,
                             success
                                 ? getString(R.string.lite_sync_ok, message)
-                                : getString(R.string.lite_sync_fail, message),
+                            : getString(R.string.lite_sync_fail, message),
                             Toast.LENGTH_SHORT)
                         .show()));
   }
 
   private void applyTailscaleConfigAndLaunch() {
+    if (mTailscaleBusy) {
+      return;
+    }
+    mTailscaleBusy = true;
+    setTailscaleButtonEnabled(false);
+    DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+    if (dpm == null || !dpm.isDeviceOwnerApp(getPackageName())) {
+      Toast.makeText(this, R.string.lite_enrol_all_requires_do, Toast.LENGTH_SHORT).show();
+      finishTailscaleFlow();
+      return;
+    }
+    if (!isTailscaleInstalled()) {
+      Toast.makeText(this, R.string.tailscale_not_installed, Toast.LENGTH_SHORT).show();
+      finishTailscaleFlow();
+      return;
+    }
+    clearTailscaleDataForConfigFlow(
+        () -> {
+          deleteFile("tailscale_config.json");
+          refreshProvisioningExtras(
+              false,
+              false,
+              () -> {
+                boolean applied = applySavedTailscaleRestrictions();
+                if (applied) {
+                  launchTailscaleAndWatchForVpn();
+                }
+                finishTailscaleFlow();
+              },
+              (error) -> {
+                Toast.makeText(
+                        LiteEntryActivity.this,
+                        getString(R.string.refresh_extras_fail, error),
+                        Toast.LENGTH_LONG)
+                    .show();
+                finishTailscaleFlow();
+              });
+        },
+        (error) -> {
+          Toast.makeText(
+                  LiteEntryActivity.this,
+                  getString(R.string.lite_enrol_all_clear_failed, error),
+                  Toast.LENGTH_LONG)
+              .show();
+          finishTailscaleFlow();
+        });
+  }
+
+  private void setTailscaleButtonEnabled(boolean enabled) {
+    if (mTailscaleButton != null) {
+      mTailscaleButton.setEnabled(enabled);
+    }
+  }
+
+  private void clearTailscaleDataForConfigFlow(Runnable onSuccess, Consumer<String> onError) {
+    try {
+      DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+      ComponentName admin = DeviceAdminReceiver.getComponentName(this);
+      dpm.clearApplicationUserData(
+          admin,
+          TAILSCALE_PKG,
+          getMainExecutor(),
+          (packageName, succeeded) -> {
+            if (succeeded) {
+              runOnUiThread(onSuccess);
+            } else {
+              runOnUiThread(() -> onError.accept(packageName));
+            }
+          });
+    } catch (Exception e) {
+      runOnUiThread(() -> onError.accept(e.getMessage()));
+    }
+  }
+
+  private boolean applySavedTailscaleRestrictions() {
     EnrolConfig config = new EnrolConfig(this);
     String loginUrl = config.getTailscaleLoginUrl();
     String authKey = config.getTailscaleAuthKey();
     String hostname = config.getTailscaleHostname();
     if (loginUrl == null || authKey == null || hostname == null) {
       Toast.makeText(this, R.string.tailscale_config_missing, Toast.LENGTH_SHORT).show();
-      return;
+      return false;
     }
     final String pkg = "com.tailscale.ipn";
     PackageManager pm = getPackageManager();
@@ -189,7 +410,7 @@ public class LiteEntryActivity extends Activity {
       pm.getPackageInfo(pkg, 0);
     } catch (Exception e) {
       Toast.makeText(this, R.string.tailscale_not_installed, Toast.LENGTH_SHORT).show();
-      return;
+      return false;
     }
     try {
       DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
@@ -206,12 +427,19 @@ public class LiteEntryActivity extends Activity {
       Toast.makeText(this, R.string.tailscale_config_ok, Toast.LENGTH_SHORT).show();
     } catch (Exception e) {
       Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+      return false;
     }
+    return true;
+  }
+
+  private void launchTailscaleAndWatchForVpn() {
+    PackageManager pm = getPackageManager();
     try {
-      Intent launch = pm.getLaunchIntentForPackage(pkg);
+      Intent launch = pm.getLaunchIntentForPackage(TAILSCALE_PKG);
       if (launch != null) {
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(launch);
+        startAuthKeyCleanupWatch();
       } else {
         Toast.makeText(this, R.string.tailscale_launch_failed, Toast.LENGTH_SHORT).show();
       }
@@ -220,11 +448,48 @@ public class LiteEntryActivity extends Activity {
     }
   }
 
+  private void startAuthKeyCleanupWatch() {
+    stopAuthKeyCleanupWatch();
+    mAuthKeyCleanupRunnable =
+        new Runnable() {
+          @Override
+          public void run() {
+            if (isVpnUp()) {
+              clearAuthKeyAfterVpn();
+              stopAuthKeyCleanupWatch();
+              return;
+            }
+            mHandler.postDelayed(this, VPN_POLL_INTERVAL_MS);
+          }
+        };
+    mHandler.post(mAuthKeyCleanupRunnable);
+  }
+
+  private void stopAuthKeyCleanupWatch() {
+    if (mAuthKeyCleanupRunnable != null) {
+      mHandler.removeCallbacks(mAuthKeyCleanupRunnable);
+      mAuthKeyCleanupRunnable = null;
+    }
+  }
+
+  private void finishTailscaleFlow() {
+    mTailscaleBusy = false;
+    setTailscaleButtonEnabled(true);
+  }
+
   private void refreshProvisioningExtras() {
-    refreshProvisioningExtras(false);
+    refreshProvisioningExtras(false, true, null, null);
   }
 
   private void refreshProvisioningExtras(boolean enrolAllFlow) {
+    refreshProvisioningExtras(enrolAllFlow, true, null, null);
+  }
+
+  private void refreshProvisioningExtras(
+      boolean enrolAllFlow,
+      boolean applyTailscale,
+      Runnable onSuccess,
+      Consumer<String> onError) {
     new Thread(
             () -> {
               try {
@@ -273,7 +538,12 @@ public class LiteEntryActivity extends Activity {
                     () -> {
                       refreshFields();
                       Toast.makeText(this, R.string.refresh_extras_ok, Toast.LENGTH_SHORT).show();
-                      applyTailscaleConfigAndLaunch();
+                      if (applyTailscale) {
+                        applyTailscaleConfigAndLaunch();
+                      }
+                      if (onSuccess != null) {
+                        onSuccess.run();
+                      }
                       if (enrolAllFlow) {
                         mEnrolAllStep = EnrolAllStep.WAITING_FOR_VPN;
                         startVpnPolling();
@@ -288,6 +558,9 @@ public class LiteEntryActivity extends Activity {
                                 getString(R.string.refresh_extras_fail, e.getMessage()),
                                 Toast.LENGTH_LONG)
                             .show());
+                if (onError != null) {
+                  runOnUiThread(() -> onError.accept(e.getMessage()));
+                }
               }
             })
         .start();

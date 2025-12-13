@@ -105,6 +105,8 @@ android_library(
         ":androidx_deps",
         ":bouncycastle_deps",
         ":guava_deps",
+        "@maven//:com_hivemq_hivemq_mqtt_client",
+        "@maven//:io_netty_netty_all",
         "@setupdesign//:setupdesign",
         "@setupcompat//:setupcompat",
     ],

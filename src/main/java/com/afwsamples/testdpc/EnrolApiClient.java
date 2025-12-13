@@ -9,6 +9,7 @@ import android.util.Log;
 import android.widget.Toast;
 import com.afwsamples.testdpc.common.Util;
 import com.afwsamples.testdpc.mdm.FcmPushManager;
+import com.afwsamples.testdpc.mdm.MqttCredentialRefresher;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -152,6 +153,8 @@ public class EnrolApiClient {
         EnrolState state = new EnrolState(appContext);
         state.saveFromResponse(json);
         result.success = true;
+        // Immediately fetch pending MQTT credentials so UI fields are populated post-enrol.
+        MqttCredentialRefresher.refresh(appContext);
         FileLogger.log(
             appContext,
             "EnrolApi success reqId="

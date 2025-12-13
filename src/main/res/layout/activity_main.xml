@@ -15,16 +15,123 @@
  limitations under the License.
 -->
 
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity"
-    tools:ignore="MergeRootFrame">
+    android:orientation="vertical"
+    tools:context=".MainActivity">
 
     <FrameLayout
         android:id="@+id/container"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-</FrameLayout>
+    <ScrollView
+        android:id="@+id/mqtt_section"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fillViewport="false"
+        android:background="@android:color/transparent"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/mqtt_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/mqtt_section_title"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/mqtt_host"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_host"
+                android:inputType="textUri" />
+
+            <EditText
+                android:id="@+id/mqtt_port"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_port"
+                android:inputType="number" />
+
+            <EditText
+                android:id="@+id/mqtt_path"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_path"
+                android:inputType="textUri" />
+
+            <EditText
+                android:id="@+id/mqtt_user"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_user"
+                android:inputType="textEmailAddress" />
+
+            <EditText
+                android:id="@+id/mqtt_pass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_pass"
+                android:inputType="textPassword" />
+
+            <EditText
+                android:id="@+id/mqtt_qid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_qid"
+                android:inputType="text" />
+
+            <EditText
+                android:id="@+id/mqtt_client_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/mqtt_client_id"
+                android:inputType="text" />
+
+            <CheckBox
+                android:id="@+id/mqtt_tls"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/mqtt_tls" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="end"
+                android:paddingTop="8dp">
+
+                <Button
+                    android:id="@+id/mqtt_start_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/mqtt_start" />
+
+                <Button
+                    android:id="@+id/mqtt_stop_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/mqtt_stop" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/mqtt_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="6dp"
+                android:text="@string/mqtt_status_placeholder" />
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>
