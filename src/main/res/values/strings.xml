@@ -311,7 +311,7 @@
     <string name="mqtt_refresh_ok">MQTT credentials refreshed for %1$s</string>
     <string name="mqtt_refresh_failed">MQTT refresh failed: %1$s</string>
     <string name="mqtt_refresh_no_creds">No pending MQTT credentials</string>
-    <string name="mqtt_section_title">Lite MQTT klijent (WSS)</string>
+    <string name="mqtt_section_title">Lite MQTT client (WSS)</string>
     <string name="mqtt_host">MQTT host</string>
     <string name="mqtt_port">MQTT port</string>
     <string name="mqtt_path">MQTT path</string>
@@ -319,7 +319,8 @@
     <string name="mqtt_pass">MQTT password</string>
     <string name="mqtt_qid">MQTT qid</string>
     <string name="mqtt_client_id">MQTT clientId</string>
-    <string name="mqtt_tls">TLS ukljucen</string>
+    <string name="mqtt_tls">TLS enabled</string>
+    <string name="mqtt_edit_toggle">Enable editing</string>
     <string name="mqtt_start">Start</string>
     <string name="mqtt_stop">Stop</string>
     <string name="mqtt_status_placeholder">MQTT status</string>

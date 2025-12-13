@@ -1,10 +1,13 @@
 package com.afwsamples.testdpc.lite;
 
-import android.app.Service;
-import android.content.Intent;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -35,6 +38,7 @@ public class LiteMqttService extends Service {
 
   public static final String ACTION_START = "com.afwsamples.testdpc.lite.action.MQTT_START";
   public static final String ACTION_STOP = "com.afwsamples.testdpc.lite.action.MQTT_STOP";
+  public static final String ACTION_BOOT_START = "com.afwsamples.testdpc.lite.action.MQTT_BOOT_START";
   public static final String ACTION_STATUS_BROADCAST =
       "com.afwsamples.testdpc.lite.action.MQTT_STATUS";
   public static final String EXTRA_STATUS = "status";
@@ -44,14 +48,23 @@ public class LiteMqttService extends Service {
   private static final long SESSION_EXPIRY_SECONDS = 24 * 60 * 60;
   private static final int KEEP_ALIVE_SECONDS = 120;
   private static final long HEARTBEAT_INTERVAL_SECONDS = 60L;
+  private static final long BOOT_VPN_TIMEOUT_MS = 60000L;
+  private static final long BOOT_VPN_RETRY_MS = 5000L;
+
+
   private static final String CHANNEL_ID = "lite_mqtt";
   private static final int NOTIFICATION_ID = 2002;
+  private static volatile String sLastStatus = null;
+  private static volatile String sLastError = null;
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "lite-mqtt"));
   private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
 
   private Mqtt5AsyncClient client;
   private ScheduledFuture<?> heartbeatTask;
+
+  private ScheduledFuture<?> bootVpnWaitTask;
+  private long bootDeadlineMs = 0L;
   private boolean publishHandlerRegistered = false;
   private PowerManager.WakeLock wakeLock;
 
@@ -66,6 +79,8 @@ public class LiteMqttService extends Service {
     } else if (ACTION_STOP.equals(action)) {
       stopClient();
       stopSelf();
+    } else if (ACTION_BOOT_START.equals(action)) {
+      startAfterVpn();
     }
     return START_STICKY;
   }
@@ -93,6 +108,30 @@ public class LiteMqttService extends Service {
     logToFile("MQTT startClient: connecting...");
     reconnectAttempts.set(0);
     connectWithBackoff();
+  }
+
+  
+
+  private void startAfterVpn() {
+    bootDeadlineMs = System.currentTimeMillis() + BOOT_VPN_TIMEOUT_MS;
+    checkVpnAndStart();
+  }
+
+  private void checkVpnAndStart() {
+    cancelBootVpnWait();
+    if (isVpnUp()) {
+      broadcastStatus("vpn_detected", null);
+      startClient();
+      return;
+    }
+    if (System.currentTimeMillis() > bootDeadlineMs) {
+      broadcastStatus("vpn_timeout", "VPN not up after boot");
+      stopSelf();
+      return;
+    }
+    bootVpnWaitTask =
+        executor.schedule(this::checkVpnAndStart, BOOT_VPN_RETRY_MS, TimeUnit.MILLISECONDS);
+    broadcastStatus("vpn_wait", "Waiting for VPN to start MQTT");
   }
 
   private void connectWithBackoff() {
@@ -186,7 +225,7 @@ public class LiteMqttService extends Service {
     Notification notification =
         new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Lite MQTT")
-            .setContentText("Odrzavanje MQTT veze")
+            .setContentText("Maintaining MQTT connection")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build();
@@ -202,6 +241,8 @@ public class LiteMqttService extends Service {
 
   private void stopClient() {
     releaseWakeLock();
+    
+    cancelBootVpnWait();
     if (heartbeatTask != null) {
       heartbeatTask.cancel(true);
       heartbeatTask = null;
@@ -346,12 +387,46 @@ public class LiteMqttService extends Service {
   }
 
   private void broadcastStatus(String status, String error) {
+    sLastStatus = status;
+    sLastError = error;
     Intent intent = new Intent(ACTION_STATUS_BROADCAST);
     intent.putExtra(EXTRA_STATUS, status);
     if (error != null) {
       intent.putExtra(EXTRA_ERROR, error);
     }
     sendBroadcast(intent);
+  }
+
+  public static String getLastStatus() {
+    return sLastStatus;
+  }
+
+  public static String getLastError() {
+    return sLastError;
+  }
+
+
+
+  private void cancelBootVpnWait() {
+    if (bootVpnWaitTask != null) {
+      bootVpnWaitTask.cancel(true);
+      bootVpnWaitTask = null;
+    }
+  }
+
+
+
+  private boolean isVpnUp() {
+    ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+    if (cm == null) {
+      return false;
+    }
+    Network active = cm.getActiveNetwork();
+    if (active == null) {
+      return false;
+    }
+    NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+    return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
   }
 
   private void acquireWakeLock() {

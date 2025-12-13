@@ -59,6 +59,7 @@ public class LiteEntryActivity extends Activity {
   }
 
   private static final String TAILSCALE_PKG = "com.tailscale.ipn";
+  private static final boolean TAILSCALE_FORCE_ENABLED = true;
   private static final long VPN_TIMEOUT_MS = 90000L;
   private static final long VPN_POLL_INTERVAL_MS = 3000L;
 
@@ -73,6 +74,7 @@ public class LiteEntryActivity extends Activity {
   private EditText mqttQidField;
   private EditText mqttClientIdField;
   private CheckBox mqttTlsField;
+  private CheckBox mqttEditToggle;
   private TextView mqttStatusView;
   private BroadcastReceiver mqttStatusReceiver;
   private Button mTailscaleButton;
@@ -208,6 +210,7 @@ public class LiteEntryActivity extends Activity {
   private void setupMqttUi() {
     mqttHostField = findViewById(R.id.mqtt_host);
     mqttStatusView = findViewById(R.id.mqtt_status);
+    mqttEditToggle = findViewById(R.id.mqtt_edit_toggle);
     if (mqttHostField == null || mqttStatusView == null) {
       mqttUiInitialized = false;
       return;
@@ -234,6 +237,12 @@ public class LiteEntryActivity extends Activity {
     mqttPassField.setText(savedPassword != null ? savedPassword : enrolState.getMqttPassword());
     mqttClientIdField.setText(cfg.getClientId());
     mqttTlsField.setChecked(cfg.isTlsEnabled());
+    setMqttFieldsEnabled(false);
+    if (mqttEditToggle != null) {
+      mqttEditToggle.setChecked(false);
+      mqttEditToggle.setOnCheckedChangeListener(
+          (buttonView, isChecked) -> setMqttFieldsEnabled(isChecked));
+    }
     mqttStatusView.setText(getString(R.string.mqtt_status_placeholder));
     mqttStatusReceiver =
         new BroadcastReceiver() {
@@ -266,11 +275,7 @@ public class LiteEntryActivity extends Activity {
     }
     runOnUiThread(
         () -> {
-          if (error != null && !error.isEmpty()) {
-            mqttStatusView.setText(status + " (" + error + ")");
-          } else {
-            mqttStatusView.setText(status);
-          }
+          mqttStatusView.setText(formatMqttStatus(status, error));
         });
   }
 
@@ -284,6 +289,7 @@ public class LiteEntryActivity extends Activity {
     } else {
       registerReceiver(mqttStatusReceiver, filter);
     }
+    updateMqttStatus(LiteMqttService.getLastStatus(), LiteMqttService.getLastError());
   }
 
   private void unregisterMqttReceiver() {
@@ -303,6 +309,38 @@ public class LiteEntryActivity extends Activity {
     } catch (NumberFormatException e) {
       return LiteMqttConfig.DEFAULT_PORT;
     }
+  }
+
+  private String formatMqttStatus(String status, String error) {
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    String endpoint =
+        (cfg.getHost() != null ? cfg.getHost() : "host")
+            + ":"
+            + cfg.getPort()
+            + (cfg.isTlsEnabled() ? " (TLS)" : " (no TLS)");
+    String detail = (error != null && !error.isEmpty()) ? " (" + error + ")" : "";
+    if ("connecting".equals(status)) {
+      return "Connecting to " + endpoint + "...";
+    } else if ("connected".equals(status)) {
+      return "Connected to " + endpoint;
+    } else if ("reconnecting".equals(status)) {
+      return "Reconnecting to " + endpoint + detail;
+    } else if ("heartbeat".equals(status)) {
+      return "Connected (heartbeat ok)";
+    } else if ("heartbeat_error".equals(status)) {
+      return "Heartbeat failed" + detail;
+    } else if ("subscribe_error".equals(status)) {
+      return "Subscribe failed" + detail;
+    } else if ("subscribed".equals(status)) {
+      return "Subscribed to " + (error != null ? error : "notify");
+    } else if ("sync".equals(status)) {
+      return "Syncing inbox" + detail;
+    } else if ("error".equals(status)) {
+      return "Connection error" + detail;
+    } else if ("stopped".equals(status)) {
+      return "MQTT stopped";
+    }
+    return (status != null ? status : "Unknown") + detail;
   }
 
   private void triggerSync() {
@@ -373,6 +411,20 @@ public class LiteEntryActivity extends Activity {
     if (mTailscaleButton != null) {
       mTailscaleButton.setEnabled(enabled);
     }
+  }
+
+  private void setMqttFieldsEnabled(boolean enabled) {
+    if (!mqttUiInitialized) {
+      return;
+    }
+    mqttHostField.setEnabled(enabled);
+    mqttPortField.setEnabled(enabled);
+    mqttPathField.setEnabled(enabled);
+    mqttUserField.setEnabled(enabled);
+    mqttPassField.setEnabled(enabled);
+    mqttQidField.setEnabled(enabled);
+    mqttClientIdField.setEnabled(enabled);
+    mqttTlsField.setEnabled(enabled);
   }
 
   private void clearTailscaleDataForConfigFlow(Runnable onSuccess, Consumer<String> onError) {
@@ -594,7 +646,7 @@ public class LiteEntryActivity extends Activity {
   private void writeTailscaleConfigFile(String authKey, String hostname, String controlUrl) {
     try {
       JSONObject obj = new JSONObject();
-      obj.put("ForceEnabled", true);
+      obj.put("ForceEnabled", TAILSCALE_FORCE_ENABLED);
       obj.put("PostureChecking", true);
       obj.put("AllowIncomingConnections", true);
       obj.put("UseTailscaleDNSSettings", true);

@@ -74,6 +74,7 @@ public class PolicyManagementActivity extends DumpableActivity
   private EditText mqttQidField;
   private EditText mqttClientIdField;
   private CheckBox mqttTlsField;
+  private CheckBox mqttEditToggle;
   private TextView mqttStatusView;
   private BroadcastReceiver mqttStatusReceiver;
   private boolean mqttUiInitialized = false;
@@ -105,6 +106,7 @@ public class PolicyManagementActivity extends DumpableActivity
   private void setupMqttUi() {
     mqttHostField = findViewById(R.id.mqtt_host);
     mqttStatusView = findViewById(R.id.mqtt_status);
+    mqttEditToggle = findViewById(R.id.mqtt_edit_toggle);
     if (mqttHostField == null || mqttStatusView == null) {
       mqttUiInitialized = false;
       return;
@@ -134,6 +136,12 @@ public class PolicyManagementActivity extends DumpableActivity
     mqttPassField.setText(savedPassword != null ? savedPassword : enrolState.getMqttPassword());
     mqttClientIdField.setText(cfg.getClientId());
     mqttTlsField.setChecked(cfg.isTlsEnabled());
+    setMqttFieldsEnabled(false);
+    if (mqttEditToggle != null) {
+      mqttEditToggle.setChecked(false);
+      mqttEditToggle.setOnCheckedChangeListener(
+          (buttonView, isChecked) -> setMqttFieldsEnabled(isChecked));
+    }
     mqttStatusView.setText(getString(R.string.mqtt_status_placeholder));
 
     startButton.setOnClickListener(
@@ -179,11 +187,7 @@ public class PolicyManagementActivity extends DumpableActivity
     if (!mqttUiInitialized || mqttStatusView == null) {
       return;
     }
-    if (error != null && !error.isEmpty()) {
-      mqttStatusView.setText(status + " (" + error + ")");
-    } else {
-      mqttStatusView.setText(status);
-    }
+    mqttStatusView.setText(formatMqttStatus(status, error));
   }
 
   private void registerMqttReceiver() {
@@ -196,6 +200,7 @@ public class PolicyManagementActivity extends DumpableActivity
     } else {
       registerReceiver(mqttStatusReceiver, filter);
     }
+    updateMqttStatus(LiteMqttService.getLastStatus(), LiteMqttService.getLastError());
   }
 
   private void unregisterMqttReceiver() {
@@ -215,6 +220,52 @@ public class PolicyManagementActivity extends DumpableActivity
     } catch (NumberFormatException e) {
       return LiteMqttConfig.DEFAULT_PORT;
     }
+  }
+
+  private void setMqttFieldsEnabled(boolean enabled) {
+    if (!mqttUiInitialized) {
+      return;
+    }
+    mqttHostField.setEnabled(enabled);
+    mqttPortField.setEnabled(enabled);
+    mqttPathField.setEnabled(enabled);
+    mqttUserField.setEnabled(enabled);
+    mqttPassField.setEnabled(enabled);
+    mqttQidField.setEnabled(enabled);
+    mqttClientIdField.setEnabled(enabled);
+    mqttTlsField.setEnabled(enabled);
+  }
+
+  private String formatMqttStatus(String status, String error) {
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    String endpoint =
+        (cfg.getHost() != null ? cfg.getHost() : "host")
+            + ":"
+            + cfg.getPort()
+            + (cfg.isTlsEnabled() ? " (TLS)" : " (no TLS)");
+    String detail = (error != null && !error.isEmpty()) ? " (" + error + ")" : "";
+    if ("connecting".equals(status)) {
+      return "Connecting to " + endpoint + "...";
+    } else if ("connected".equals(status)) {
+      return "Connected to " + endpoint;
+    } else if ("reconnecting".equals(status)) {
+      return "Reconnecting to " + endpoint + detail;
+    } else if ("heartbeat".equals(status)) {
+      return "Connected (heartbeat ok)";
+    } else if ("heartbeat_error".equals(status)) {
+      return "Heartbeat failed" + detail;
+    } else if ("subscribe_error".equals(status)) {
+      return "Subscribe failed" + detail;
+    } else if ("subscribed".equals(status)) {
+      return "Subscribed to " + (error != null ? error : "notify");
+    } else if ("sync".equals(status)) {
+      return "Syncing inbox" + detail;
+    } else if ("error".equals(status)) {
+      return "Connection error" + detail;
+    } else if ("stopped".equals(status)) {
+      return "MQTT stopped";
+    }
+    return (status != null ? status : "Unknown") + detail;
   }
 
   @Override
