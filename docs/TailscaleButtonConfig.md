@@ -1,12 +1,11 @@
-Kada u Lite launcheru klikneš na Set Tailscale config, okida se applyTailscaleConfigAndLaunch() iz src/main/java/com/afwsamples/testdpc/lite/LiteEntryActivity.java (line 319):
+Klik na **Set Tailscale config** u Lite launcheru pokreće novi flow u `applyTailscaleConfigAndLaunch()` (`src/main/java/com/afwsamples/testdpc/lite/LiteEntryActivity.java`):
 
-    applyTailscaleConfigAndLaunch() je u src/main/java/com/afwsamples/testdpc/lite/LiteEntryActivity.java (oko linije 288) i radi ovaj slijed:
+- Validacija: mora biti DO i `com.tailscale.ipn` mora biti instaliran; inače toast i prekid.
+- Force stop/clear data: `clearApplicationUserData` za `com.tailscale.ipn`; na fail flow staje.
+- Brisanje starog configa: best-effort `deleteFile("tailscale_config.json")`.
+- Refresh konfiguracije: `refreshProvisioningExtras` (bez auto-rekurzije) dohvaća `/api/provisioning/extras` i osvježava EnrolConfig (`LoginURL`, `ControlURL`, `AuthKey`, `Hostname`); na fail flow staje.
+- Primjena nove konfiguracije: postavlja application restrictions za `com.tailscale.ipn` i zapisuje novi `tailscale_config.json` s istim vrijednostima + `ForceEnabled`, `PostureChecking`, `AllowIncomingConnections`, `UseTailscaleDNSSettings`.
+- Pokretanje: starta Tailscale launch intent (NEW_TASK); ako nedostaje intent ili baci iznimku, toast `Failed to launch Tailscale`.
+- Nakon VPN UP: polling detektira VPN transport i tada briše `AuthKey` iz application restrictions i novog `tailscale_config.json` (ostala polja ostaju), uz kratki toast/log.
 
-        - Učita Tailscale vrijednosti iz EnrolConfig: LoginURL, ControlURL (ako postoji), AuthKey, Hostname. Ako išta nedostaje, pokaže toast Missing Tailscale config values i prekida.
-        - Provjerava je li Tailscale app (com.tailscale.ipn) instaliran; ako nije, toast Tailscale not installed i prekid.
-        - Ako je sve spremno, preko DevicePolicyManager postavlja application restrictions za Tailscale paket (LoginURL, ControlURL ili fallback na LoginURL, AuthKey, Hostname).
-        - Snimi iste vrijednosti u lokalni tailscale_config.json (internal storage) zajedno s flagovima ForceEnabled, PostureChecking, AllowIncomingConnections, UseTailscaleDNSSettings. Na uspjeh pokaže toast Tailscale config applied; na iznimku pokazuje poruku greške.
-        Po- kušava dobiti launch intent za Tailscale i pokrenuti ga s FLAG_ACTIVITY_NEW_TASK; ako ne uspije, toast Failed to launch Tailscale.
-
-
-Gumb je definiran u src/main/res/layout/activity_lite_entry.xml (@+id/tailscale_config_button) i listener je spojen u onCreate na istoj aktivnosti (LiteEntryActivity.java (lines 136-144)).
+Gumb je u `src/main/res/layout/activity_lite_entry.xml` (`@+id/tailscale_config_button`), listener se veže u `onCreate`.
