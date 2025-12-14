@@ -99,7 +99,6 @@ public class LiteMqttService extends Service {
 
   private void startClient() {
     ensureForeground();
-    acquireWakeLock();
     if (client != null && client.getState() == MqttClientState.CONNECTED) {
       broadcastStatus("connected", null);
       logToFile("MQTT startClient: already connected");
@@ -137,6 +136,7 @@ public class LiteMqttService extends Service {
   private void connectWithBackoff() {
     executor.execute(
         () -> {
+          acquireWakeLock(60000L);
           LiteMqttConfig config = new LiteMqttConfig(this);
           EnrolState enrolState = new EnrolState(this);
           try {
@@ -187,6 +187,7 @@ public class LiteMqttService extends Service {
                         logToFile("MQTT connect failed: " + error.getMessage());
                         broadcastStatus("error", error.getMessage());
                         scheduleReconnect();
+                        releaseWakeLock();
                         return;
                       }
                       Log.i(TAG, "MQTT connected");
@@ -196,11 +197,13 @@ public class LiteMqttService extends Service {
                       subscribeNotify(enrolState.getDeviceId());
                       registerMessageHandler();
                       startHeartbeat(config, enrolState.getDeviceId());
+                      releaseWakeLock();
                     });
           } catch (Exception e) {
             Log.w(TAG, "MQTT connection setup failed", e);
             broadcastStatus("error", e.getMessage());
             scheduleReconnect();
+            releaseWakeLock();
           }
         });
   }
@@ -282,6 +285,7 @@ public class LiteMqttService extends Service {
       scheduleReconnect();
       return;
     }
+    acquireWakeLock(15000L);
     String topic = heartbeatTopic(deviceId);
     try {
       client
@@ -303,12 +307,14 @@ public class LiteMqttService extends Service {
                   broadcastStatus("heartbeat", null);
                   logToFile("Heartbeat ok to " + topic);
                 }
+                releaseWakeLock();
               });
     } catch (Exception e) {
       Log.w(TAG, "Heartbeat publish error", e);
       broadcastStatus("heartbeat_error", e.getMessage());
       logToFile("Heartbeat exception: " + e.getMessage());
       scheduleReconnect();
+      releaseWakeLock();
     }
   }
 
@@ -366,16 +372,23 @@ public class LiteMqttService extends Service {
   private void triggerInboxSync(String reason) {
     broadcastStatus("sync", reason);
     logToFile("Trigger inbox sync: " + reason);
-    MdmSyncManager.syncNow(
-        this,
-        (success, message) -> {
-          if (!success) {
-            Log.w(TAG, "Inbox sync failed: " + message);
-            logToFile("Inbox sync failed: " + message);
-          } else {
-            logToFile("Inbox sync ok");
-          }
-        });
+    acquireWakeLock(120000L);
+    try {
+      MdmSyncManager.syncNow(
+          this,
+          (success, message) -> {
+            if (!success) {
+              Log.w(TAG, "Inbox sync failed: " + message);
+              logToFile("Inbox sync failed: " + message);
+            } else {
+              logToFile("Inbox sync ok");
+            }
+            releaseWakeLock();
+          });
+    } catch (Exception e) {
+      releaseWakeLock();
+      throw e;
+    }
   }
 
   private void logToFile(String msg) {
@@ -429,18 +442,24 @@ public class LiteMqttService extends Service {
     return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
   }
 
-  private void acquireWakeLock() {
-    if (wakeLock == null || !wakeLock.isHeld()) {
-      PowerManager pm = getSystemService(PowerManager.class);
-      if (pm != null) {
-        wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "LiteMqttService:mqtt_connection");
-        wakeLock.setReferenceCounted(false);
-        wakeLock.acquire();
-        logToFile("WakeLock acquired");
-      }
+  private void acquireWakeLock(long timeoutMs) {
+    if (timeoutMs <= 0) {
+      return;
     }
+    PowerManager pm = getSystemService(PowerManager.class);
+    if (pm == null) {
+      return;
+    }
+    if (wakeLock == null) {
+      wakeLock =
+          pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LiteMqttService:mqtt_connection");
+      wakeLock.setReferenceCounted(false);
+    }
+    if (wakeLock.isHeld()) {
+      wakeLock.release();
+    }
+    wakeLock.acquire(timeoutMs);
+    logToFile("WakeLock acquired for " + timeoutMs + "ms");
   }
 
   private void releaseWakeLock() {
