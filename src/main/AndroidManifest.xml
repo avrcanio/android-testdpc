@@ -17,7 +17,7 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-          package="com.afwsamples.testdpc"
+          package="mdm.qubit.dpc"
           tools:ignore="MissingClass"
     android:versionCode="9019"
     android:versionName="9.0.19">
@@ -295,7 +295,7 @@
             tools:node="remove" />
 
         <provider
-                android:authorities="com.afwsamples.testdpc.fileprovider"
+                android:authorities="mdm.qubit.dpc.fileprovider"
                 android:name="androidx.core.content.FileProvider"
                 android:grantUriPermissions="true"
                 android:exported="false">
@@ -305,13 +305,13 @@
         </provider>
 
         <provider
-                android:authorities="com.afwsamples.testdpc.mqttcredentials"
+                android:authorities="mdm.qubit.dpc.mqttcredentials"
                 android:name=".MqttCredentialsProvider"
-                android:exported="true" />
+                android:exported="false" />
 
         <provider
-                android:authorities="com.afwsamples.testdpc.usericoncontentprovider"
-                android:name="com.afwsamples.testdpc.UserIconContentProvider"
+                android:authorities="mdm.qubit.dpc.usericoncontentprovider"
+                android:name="mdm.qubit.dpc.UserIconContentProvider"
                 android:grantUriPermissions="true"
                 android:exported="true">
         </provider>

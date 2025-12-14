@@ -10,7 +10,7 @@ MANIFEST = "src/main/AndroidManifest.xml"
 
 MANIFEST_DEBUG = "src/main/AndroidManifestDebug.xml"
 
-PACKAGE = "com.afwsamples.testdpc"
+PACKAGE = "mdm.qubit.dpc"
 
 config_setting(
     name = "lite_mode",
@@ -124,30 +124,30 @@ android_library(
     idl_parcelables = [
         "src/main/aidl/android/content/res/AssetFileDescriptor.aidl",
     ],
-    idl_srcs = glob(["src/main/aidl/com/afwsamples/testdpc/comp/*.aidl"]),
+    idl_srcs = glob(["src/main/aidl/mdm/qubit/dpc/comp/*.aidl"]),
 )
 
 java_library(
     name = "test_utils",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/Utils.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/Utils.java"],
 )
 
 
 android_local_test(
    name = "PermissionsHelperTest",
-   srcs = ["src/test/java/com/afwsamples/testdpc/common/PermissionsHelperTest.java"],
+   srcs = ["src/test/java/mdm/qubit/dpc/common/PermissionsHelperTest.java"],
    manifest = MANIFEST,
    deps = [
        ":test_deps",
        ":testdpc_lib",
        "@robolectric//bazel:android-all",
    ],
-   custom_package = "com.afwsamples.testdpc.common"
+   custom_package = "mdm.qubit.dpc.common"
 )
 
 android_local_test(
    name = "AppStatesServiceTest",
-   srcs = ["src/test/java/com/afwsamples/testdpc/feedback/AppStatesServiceTest.java"],
+   srcs = ["src/test/java/mdm/qubit/dpc/feedback/AppStatesServiceTest.java"],
    manifest = MANIFEST,
    deps = [
        ":androidx_deps",
@@ -155,39 +155,39 @@ android_local_test(
        ":testdpc_lib",
        "@robolectric//bazel:android-all",
    ],
-   custom_package = "com.afwsamples.testdpc.feedback"
+   custom_package = "mdm.qubit.dpc.feedback"
 )
 
 android_local_test(
    name = "WifiConfigUtilTest",
-   srcs = ["src/test/java/com/afwsamples/testdpc/policy/wifimanagement/WifiConfigUtilTest.java"],
+   srcs = ["src/test/java/mdm/qubit/dpc/policy/wifimanagement/WifiConfigUtilTest.java"],
    manifest = MANIFEST,
    deps = [
        ":test_deps",
        ":testdpc_lib",
        "@robolectric//bazel:android-all",
    ],
-   custom_package = "com.afwsamples.testdpc.policy.wifimanagement"
+   custom_package = "mdm.qubit.dpc.policy.wifimanagement"
 )
 
 android_local_test(
    name = "GetProvisioningModeActivityTest",
-   srcs = ["src/test/java/com/afwsamples/testdpc/provision/GetProvisioningModeActivityTest.java"],
+   srcs = ["src/test/java/mdm/qubit/dpc/provision/GetProvisioningModeActivityTest.java"],
    manifest = MANIFEST,
-   test_class = "com.afwsamples.testdpc.provision.GetProvisioningModeActivityTest",
+   test_class = "mdm.qubit.dpc.provision.GetProvisioningModeActivityTest",
    deps = [
        ":test_deps",
        ":testdpc_lib",
        "@maven//:org_robolectric_robolectric",
        "@robolectric//bazel:android-all",
    ],
-   custom_package = "com.afwsamples.testdpc.provision"
+   custom_package = "mdm.qubit.dpc.provision"
 )
 
 java_test(
     name = "BooleanParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/BooleanParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/BooleanParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -198,7 +198,7 @@ java_test(
 java_test(
     name = "ByteParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/ByteParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/ByteParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -209,7 +209,7 @@ java_test(
 java_test(
     name = "CharParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/CharParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/CharParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -220,7 +220,7 @@ java_test(
 java_test(
     name = "DoubleParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/DoubleParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/DoubleParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -231,7 +231,7 @@ java_test(
 java_test(
     name = "FloatParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/FloatParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/FloatParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -242,7 +242,7 @@ java_test(
 java_test(
     name = "IntParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/IntParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/IntParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -253,7 +253,7 @@ java_test(
 java_test(
     name = "LongParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/LongParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/LongParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -264,7 +264,7 @@ java_test(
 java_test(
     name = "ShortParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/ShortParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/ShortParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -275,7 +275,7 @@ java_test(
 java_test(
     name = "StringParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/StringParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/StringParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -286,7 +286,7 @@ java_test(
 java_test(
     name = "CustomParserTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/CustomParserTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/CustomParserTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -297,7 +297,7 @@ java_test(
 java_test(
     name = "CallbackTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/CallbackTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/CallbackTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -308,7 +308,7 @@ java_test(
 java_test(
     name = "HelpTextGenerationTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/HelpTextGenerationTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/HelpTextGenerationTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -319,7 +319,7 @@ java_test(
 java_test(
     name = "InvalidCallsTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/InvalidCallsTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/InvalidCallsTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -330,7 +330,7 @@ java_test(
 java_test(
     name = "ParamTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/ParamTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/ParamTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",
@@ -341,7 +341,7 @@ java_test(
 java_test(
     name = "RegistrationTest",
     size = "small",
-    srcs = ["src/test/java/com/afwsamples/testdpc/util/flags/RegistrationTest.java"],
+    srcs = ["src/test/java/mdm/qubit/dpc/util/flags/RegistrationTest.java"],
     deps = [
         ":test_deps",
         ":test_utils",

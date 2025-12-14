@@ -18,17 +18,17 @@
                   xmlns:testdpc="http://schemas.android.com/apk/res-auto"
                   android:title="@string/override_apn_title">
     <PreferenceCategory android:title="@string/override_apn_title">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="insert_override_apn"
             android:title="@string/insert_override_apn"
             testdpc:admin="deviceOwner|profileOwner"
             testdpc:minSdkVersion="P" />
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="remove_override_apn"
             android:title="@string/remove_override_apn"
             testdpc:admin="deviceOwner|profileOwner"
             testdpc:minSdkVersion="P" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="enable_override_apn"
             android:title="@string/enable_override_apn"
             testdpc:admin="deviceOwner|profileOwner"

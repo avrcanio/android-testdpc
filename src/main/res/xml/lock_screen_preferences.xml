@@ -17,7 +17,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:testdpc="http://schemas.android.com/apk/res-auto">
     <PreferenceCategory android:title="@string/lock_screen_message">
-        <com.afwsamples.testdpc.common.preference.DpcEditTextPreference
+        <mdm.qubit.dpc.common.preference.DpcEditTextPreference
             android:defaultValue=""
             android:dialogTitle="@string/lock_screen_message"
             android:inputType="text"
@@ -28,14 +28,14 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/maximum_lock_time_category">
-        <com.afwsamples.testdpc.common.preference.DpcEditTextPreference
+        <mdm.qubit.dpc.common.preference.DpcEditTextPreference
             android:defaultValue="0"
             android:dialogTitle="@string/maximum_lock_time_seconds"
             android:inputType="number"
             android:key="key_max_time_screen_lock"
             android:title="@string/maximum_lock_time_seconds"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="key_max_time_screen_lock_aggregate"
             android:selectable="false"
             android:title="@string/maximum_lock_time_all_admins"
@@ -43,7 +43,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/strong_auth_timeout_category">
-        <com.afwsamples.testdpc.common.preference.DpcEditTextPreference
+        <mdm.qubit.dpc.common.preference.DpcEditTextPreference
             android:defaultValue="0"
             android:dialogTitle="@string/strong_auth_timeout_seconds"
             android:inputType="number"
@@ -53,14 +53,14 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/maximum_password_fails">
-        <com.afwsamples.testdpc.common.preference.DpcEditTextPreference
+        <mdm.qubit.dpc.common.preference.DpcEditTextPreference
             android:defaultValue="0"
             android:dialogTitle="@string/maximum_password_fails"
             android:inputType="number"
             android:key="key_max_fails_before_wipe"
             android:title="@string/maximum_password_fails"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="key_max_fails_before_wipe_aggregate"
             android:selectable="false"
             android:title="@string/maximum_password_fails_all_admins"
@@ -68,50 +68,50 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/keyguard_features">
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_secure_camera"
             android:title="@string/keyguard_disable_secure_camera"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_secure_notifications"
             android:title="@string/keyguard_disable_secure_notifications"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_unredacted_notifications"
             android:title="@string/keyguard_disable_unredacted_notifications"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_trust_agents"
             android:title="@string/keyguard_disable_trust_agents"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_face"
             android:title="@string/keyguard_disable_face"
             testdpc:minSdkVersion="P" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_fingerprint"
             android:title="@string/keyguard_disable_fingerprint"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_iris"
             android:title="@string/keyguard_disable_iris"
             testdpc:minSdkVersion="P" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_remote_input"
             android:title="@string/keyguard_disable_remote_input"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_shortcuts"
             android:title="@string/keyguard_disable_shortcuts"
             testdpc:minSdkVersion="U" />
-         <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+         <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="keyguard_disable_widgets_all"
             android:title="@string/keyguard_disable_widgets_all"
             testdpc:minSdkVersion="L" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/trust_agent_features">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="key_set_trust_agent_config"
             android:title="@string/set_trust_agent_config"
             testdpc:minSdkVersion="L" />

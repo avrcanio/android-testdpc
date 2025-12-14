@@ -9,7 +9,7 @@ See the [documentation](https://developer.android.com/work/index.html) to learn 
 
 This sample uses the Bazel build system. To build this project, use the "bazel build testdpc" command.
 
-This app can also be found [on the Play store](https://play.google.com/store/apps/details?id=com.afwsamples.testdpc).
+This app can also be found [on the Play store](https://play.google.com/store/apps/details?id=mdm.qubit.dpc).
 
 ## Provisioning
 
@@ -27,7 +27,7 @@ You can find various kinds of provisioning methods [here](https://developers.goo
 1. Generate a QR code with the content:
    ```
     {
-    	"android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.afwsamples.testdpc/com.afwsamples.testdpc.DeviceAdminReceiver",
+    	"android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "mdm.qubit.dpc/mdm.qubit.dpc.DeviceAdminReceiver",
     	"android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "gJD2YwtOiWJHkSMkkIfLRlj-quNqG1fb6v100QmzM9w=",
     	"android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://testdpc-latest-apk.appspot.com"
     }
@@ -52,7 +52,7 @@ Replace the link used for `PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION` 
 *   Run the `adb` command:
 
     ```console
-    adb shell dpm set-device-owner com.afwsamples.testdpc/.DeviceAdminReceiver
+    adb shell dpm set-device-owner mdm.qubit.dpc/.DeviceAdminReceiver
     ```
 
 #### Profile Owner - Personal device (PO - BYOD)
@@ -67,7 +67,7 @@ Replace the link used for `PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION` 
 *   Run the `adb` command:
 
     ```console
-    adb shell dpm mark-profile-owner-on-organization-owned-device --user 10 com.afwsamples.testdpc/.DeviceAdminReceiver`
+    adb shell dpm mark-profile-owner-on-organization-owned-device --user 10 mdm.qubit.dpc/.DeviceAdminReceiver`
     ```
 
 #### TestDPC as DM role holder
@@ -78,7 +78,7 @@ TestDPC v9.0.5+ can be setup as Device Management Role Holder.
 
     ```console
     adb shell cmd role set-bypassing-role-qualification true
-    adb shell cmd role add-role-holder android.app.role.DEVICE_POLICY_MANAGEMENT com.afwsamples.testdpc
+    adb shell cmd role add-role-holder android.app.role.DEVICE_POLICY_MANAGEMENT mdm.qubit.dpc
     ```
 
     Note: unlike DO/PO, this change is not persisted so TestDPC needs to be

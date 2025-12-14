@@ -18,55 +18,55 @@
     xmlns:testdpc="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory android:title="@string/organization_info">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="set_organization_color"
             android:title="@string/set_organization_color"
             testdpc:minSdkVersion="N" />
-        <com.afwsamples.testdpc.common.preference.DpcEditTextPreference
+        <mdm.qubit.dpc.common.preference.DpcEditTextPreference
             android:key="set_profile_organization_name"
             android:title="@string/set_organization_name"
             testdpc:minSdkVersion="N" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/cross_profile_intents">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="add_cross_profile_intent_filter"
             android:title="@string/add_cross_profile_intents_title"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="clear_cross_profile_intent_filters"
             android:title="@string/clear_cross_profile_intents"
             testdpc:minSdkVersion="L" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/cross_profile_widget_providers_title">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="add_cross_profile_app_widgets"
             android:title="@string/add_cross_profile_app_widget_providers"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="remove_cross_profile_app_widgets"
             android:title="@string/remove_cross_profile_app_widget_providers"
             testdpc:minSdkVersion="L" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/policies_title">
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="disable_bluetooth_contact_sharing"
             android:title="@string/disable_bluetooth_contact_sharing"
             testdpc:minSdkVersion="M" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="disable_cross_profile_caller_id"
             android:title="@string/disable_cross_profile_caller_id"
             testdpc:minSdkVersion="L" />
-        <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+        <mdm.qubit.dpc.common.preference.DpcSwitchPreference
             android:key="disable_cross_profile_contacts_search"
             android:title="@string/disable_cross_profile_contacts_search"
             testdpc:minSdkVersion="N" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/work_telephony_title">
-        <com.afwsamples.testdpc.common.preference.DpcPreference
+        <mdm.qubit.dpc.common.preference.DpcPreference
             android:key="managed_subscriptions"
             android:title="@string/managed_subscriptions_title"
             testdpc:minSdkVersion="U" />

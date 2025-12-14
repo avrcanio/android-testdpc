@@ -19,42 +19,42 @@
     xmlns:testdpc="http://schemas.android.com/apk/res-auto"
     android:title="@string/set_lock_task_features_title">
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_system_info"
         android:title="@string/lock_task_feature_system_info"
         android:persistent="false"
         android:defaultValue="false"
         testdpc:minSdkVersion="P" />
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_notifications"
         android:title="@string/lock_task_feature_notifications"
         android:persistent="false"
         android:defaultValue="false"
         testdpc:minSdkVersion="P" />
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_home"
         android:title="@string/lock_task_feature_home"
         android:persistent="false"
         android:defaultValue="false"
         testdpc:minSdkVersion="P" />
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_overview"
         android:title="@string/lock_task_feature_overview"
         android:persistent="false"
         android:defaultValue="false"
         testdpc:minSdkVersion="P" />
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_global_actions"
         android:title="@string/lock_task_feature_global_actions"
         android:persistent="false"
         android:defaultValue="false"
         testdpc:minSdkVersion="P" />
 
-    <com.afwsamples.testdpc.common.preference.DpcSwitchPreference
+    <mdm.qubit.dpc.common.preference.DpcSwitchPreference
         android:key="lock_task_feature_keyguard"
         android:title="@string/lock_task_feature_keyguard"
         android:persistent="false"

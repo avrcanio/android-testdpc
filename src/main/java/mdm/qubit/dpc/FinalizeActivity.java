@@ -1,0 +1,208 @@
+/*
+ * Copyright (C) 2015 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package mdm.qubit.dpc;
+
+import static android.app.admin.DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE;
+
+import android.accounts.Account;
+import android.accounts.AccountManager;
+import android.app.Activity;
+import android.app.admin.DevicePolicyManager;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.os.PersistableBundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.TextView;
+import mdm.qubit.dpc.EnrolConfig;
+import mdm.qubit.dpc.FileLogger;
+import mdm.qubit.dpc.common.LaunchIntentUtil;
+import mdm.qubit.dpc.common.ThemeUtil;
+import mdm.qubit.dpc.common.Util;
+import mdm.qubit.dpc.provision.ProvisioningUtil;
+import mdm.qubit.dpc.provision.BaselineProvisioner;
+import com.google.android.setupcompat.template.FooterBarMixin;
+import com.google.android.setupcompat.template.FooterButton;
+import com.google.android.setupcompat.util.WizardManagerHelper;
+import com.google.android.setupdesign.GlifLayout;
+import java.util.Locale;
+
+public class FinalizeActivity extends Activity {
+
+  private static final String TAG = FinalizeActivity.class.getSimpleName();
+  private static final String EXTRA_PROVISIONING_SUPPORT_URL =
+      "android.app.extra.PROVISIONING_SUPPORT_URL";
+
+  private GlifLayout mSetupWizardLayout;
+
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    Intent intent = getIntent();
+    PersistableBundle adminExtras =
+        intent.getParcelableExtra(DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE);
+    String supportUrl = intent.getStringExtra(EXTRA_PROVISIONING_SUPPORT_URL);
+    String apkIndexUrl = null;
+    String enrolToken = null;
+    if (adminExtras != null) {
+      enrolToken = adminExtras.getString("enrol_token");
+      apkIndexUrl = adminExtras.getString("apk_index_url");
+      String tsLoginUrl = adminExtras.getString("LoginURL");
+      String tsAuthKey = adminExtras.getString("AuthKey");
+      String tsHostname = adminExtras.getString("Hostname");
+
+      FileLogger.log(this, "FinalizeActivity: adminExtras keys = " + adminExtras.keySet());
+      FileLogger.log(this, "FinalizeActivity: enrol_token = " + enrolToken);
+      FileLogger.log(this, "FinalizeActivity: apk_index_url = " + apkIndexUrl);
+      FileLogger.log(this, "FinalizeActivity: tailscale LoginURL = " + tsLoginUrl);
+      FileLogger.log(this, "FinalizeActivity: tailscale Hostname = " + tsHostname);
+
+      EnrolConfig config = new EnrolConfig(this);
+      if (enrolToken != null) {
+        config.saveEnrolToken(enrolToken);
+        FileLogger.log(this, "FinalizeActivity: enrol_token saved to prefs");
+      }
+      if (apkIndexUrl != null) {
+        config.saveApkIndexUrl(apkIndexUrl);
+      }
+      if (tsLoginUrl != null) {
+        config.saveTailscaleLoginUrl(tsLoginUrl);
+      }
+      if (tsAuthKey != null) {
+        config.saveTailscaleAuthKey(tsAuthKey);
+      }
+      if (tsHostname != null) {
+        config.saveTailscaleHostname(tsHostname);
+      }
+    } else {
+      FileLogger.log(this, "FinalizeActivity: NO adminExtras bundle in intent");
+    }
+    EnrolConfig enrolConfig = new EnrolConfig(this);
+    if (apkIndexUrl != null) {
+      enrolConfig.saveApkIndexUrl(apkIndexUrl);
+    } else {
+      apkIndexUrl = enrolConfig.getApkIndexUrl();
+    }
+    if (supportUrl != null) {
+      enrolConfig.saveSupportUrl(supportUrl);
+    } else {
+      supportUrl = enrolConfig.getSupportUrl();
+    }
+    if (enrolToken == null) {
+      enrolToken = enrolConfig.getEnrolToken();
+    }
+
+    BaselineProvisioner.run(
+        this,
+        apkIndexUrl,
+        enrolToken,
+        supportUrl,
+        Long.toHexString(System.currentTimeMillis()).toUpperCase(Locale.US));
+
+    if (savedInstanceState == null) {
+      if (Util.isManagedProfileOwner(this)) {
+        ProvisioningUtil.enableProfile(this);
+      }
+    }
+
+    if (ProvisioningUtil.isAutoProvisioningDeviceOwnerMode()) {
+        Log.i(TAG, "Automatically provisioning device onwer");
+        onNavigateNext(null);
+        return;
+    }
+
+    // get default theme string from suw intent extra and set the Theme.
+    ThemeUtil.setTheme(this, getIntent().getStringExtra(WizardManagerHelper.EXTRA_THEME));
+
+    setContentView(R.layout.finalize_activity);
+    mSetupWizardLayout = findViewById(R.id.setup_wizard_layout);
+    FooterBarMixin mixin = mSetupWizardLayout.getMixin(FooterBarMixin.class);
+    FooterButton finishButton =
+        new FooterButton.Builder(this)
+            .setText(R.string.finish_button)
+            .setListener(this::onNavigateNext)
+            .setButtonType(FooterButton.ButtonType.NEXT)
+            .setTheme(R.style.SudGlifButton_Primary)
+            .build();
+    mixin.setPrimaryButton(finishButton);
+
+    // This is just a user friendly shortcut to the policy management screen of this app.
+    ImageView appIcon = findViewById(R.id.app_icon);
+    TextView appLabel = findViewById(R.id.app_label);
+    try {
+      PackageManager packageManager = getPackageManager();
+      ApplicationInfo applicationInfo =
+          packageManager.getApplicationInfo(getPackageName(), 0 /* Default flags */);
+      appIcon.setImageDrawable(packageManager.getApplicationIcon(applicationInfo));
+      appLabel.setText(packageManager.getApplicationLabel(applicationInfo));
+    } catch (PackageManager.NameNotFoundException e) {
+      Log.w("TestDPC", "Couldn't look up our own package?!?!", e);
+    }
+
+    // Show the user which account now has management, if specified.
+    final String addedAccount = getAddedAccountName();
+    if (addedAccount != null) {
+      View accountMigrationStatusLayout;
+      if (isAccountMigrated(addedAccount)) {
+        accountMigrationStatusLayout = findViewById(R.id.account_migration_success);
+      } else {
+        accountMigrationStatusLayout = findViewById(R.id.account_migration_fail);
+      }
+      accountMigrationStatusLayout.setVisibility(View.VISIBLE);
+      TextView managedAccountName =
+          (TextView) accountMigrationStatusLayout.findViewById(R.id.managed_account_name);
+      managedAccountName.setText(addedAccount);
+    }
+
+    ((TextView) findViewById(R.id.explanation))
+        .setText(
+            Util.isDeviceOwner(this)
+                ? R.string.all_done_explanation_device_owner
+                : R.string.all_done_explanation_profile_owner);
+  }
+
+  private String getAddedAccountName() {
+    String addedAccount = getIntent().getStringExtra(LaunchIntentUtil.EXTRA_ACCOUNT_NAME);
+    // Added account infomation may be contained in EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE
+    // if FinalizeActivity is started from ACTION_ADMIN_POLICY_COMPLIANCE.
+    if (addedAccount == null) {
+      addedAccount =
+          LaunchIntentUtil.getAddedAccountName(
+              getIntent().getParcelableExtra(EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE));
+    }
+    return addedAccount;
+  }
+
+  private boolean isAccountMigrated(String addedAccount) {
+    Account[] accounts = AccountManager.get(this).getAccounts();
+    for (Account account : accounts) {
+      if (addedAccount.equalsIgnoreCase(account.name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public void onNavigateNext(View nextButton) {
+    setResult(RESULT_OK);
+    finish();
+  }
+}

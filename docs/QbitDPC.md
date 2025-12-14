@@ -3,14 +3,14 @@
 Qbit-specific notes for this TestDPC fork. Core TestDPC docs stay in the upstream README; this file tracks our deltas and workflow.
 
 ## Overview
-- Device owner / profile owner capable; package `com.afwsamples.testdpc`.
+- Device owner / profile owner capable; package `mdm.qubit.dpc`.
 - Custom additions:
   - Baseline bootstrap at provisioning: QR passes `admin extras` with `enrol_token` + `apk_index_url`; we fetch `index.json`, install missing/outdated apps (DO install), then enrol and kick first sync before VPN comes up. Support URL (if present) is logged and shown on failure.
   - One-tap Tailscale install from Policy Management (DO only) via `https://qubitmdm.online/repo/mdm/tailscale.apk`.
   - Inventory upload after app mutations: full package snapshot is attached to ACKs and sent to `/api/mdm/inventory`.
   - Block uninstall command support (`block_uninstall` → `DevicePolicyManager.setUninstallBlocked`).
 - Enrol state persists `device_id`, `device_token`, `policy_etag`, `policy_json`, `rotate_required`, `commands_pending`, `poll_interval_sec`, `mqtt_password`.
-- MQTT Core credentials provider: `content://com.afwsamples.testdpc.mqttcredentials/credentials`.
+- MQTT Core credentials provider: `content://mdm.qubit.dpc.mqttcredentials/credentials`.
 - Build: Bazel (bazelisk).
 
 ## Prerequisites
@@ -47,7 +47,7 @@ If Bazel cache is locked/corrupt: `bazel shutdown` then rebuild. Avoid `clean --
 - Nakon završetka enrola gumb ostaje onemogućen (“Enrol done”) dok se app ponovo ne instalira/počisti state. Partial states (clear/refresh/enrol u tijeku) privremeno onemogućavaju gumb.
 
 ## Provisioning logging & enrol
-- Logging: `DeviceAdminReceiver`, `ProvisioningSuccessActivity`, `FinalizeActivity`, and `PolicyManagementActivity` log admin extras and enrol tokens to `provision_log.txt` (`/data/user/0/com.afwsamples.testdpc/files`).
+- Logging: `DeviceAdminReceiver`, `ProvisioningSuccessActivity`, `FinalizeActivity`, and `PolicyManagementActivity` log admin extras and enrol tokens to `provision_log.txt` (`/data/user/0/mdm.qubit.dpc/files`).
 - Persistence: `EnrolConfig` stores `enrol_token`, `apk_index_url`, `support_url`.
 - Manual enrol: “Enrol Qubit” preference triggers `EnrolApiClient.enrolWithSavedToken(...)`; broadcast `com.qubit.mdm.ACTION_ENROL_STATE_UPDATED` refreshes UI.
 - Enrol API: POST `https://user-admin.tailnet.qubitsecured.online/api/mdm/enrol` with `{ enrol_token, is_device_owner, os_version, sdk_int, device_model, device_manufacturer }`. Response includes `device_id`, `device_token`, `policy_etag`, `policy`, `commands_pending`, `poll_interval_sec`, `mqtt_password`. First call usually 201; repeats 409. Logs include requestId, HTTP code, body, TLS cert info.
@@ -160,13 +160,12 @@ curl -sk https://user-admin.tailnet.qubitsecured.online/api/mdm/ack \
 ```
 
 ## Push token (FCM) handoff & backend registration
-- Core exposes FCM token via `content://com.qubit.mqttcore.fcm` (columns `token`, `updated_at`); call is gated to `com.afwsamples.testdpc` + Core. If missing, broadcast `com.qubit.mqttcore.ACTION_REFRESH_FCM_TOKEN` (target pkg `com.qubit.mqttcore`) and retry after Core refreshes.
-- DPC caches token in `qbit_push_token_state` (token, updated_at, enabled flag, last sync). Old token/long-lived sync triggers a POST to `/api/mdm/push-token` with headers `Authorization: Device <device_token>` + JSON `{ "token": "<fcm_token>", "platform": "fcm", "enabled": true }`.
+- Core handoff removed: no more `com.qubit.mqttcore` content provider or broadcasts.
+- DPC caches token in `qbit_push_token_state` (token, updated_at, enabled flag, last sync). If a token is present, it POSTs to `/api/mdm/push-token` with headers `Authorization: Device <device_token>` + JSON `{ "token": "<fcm_token>", "platform": "fcm", "enabled": true }`. If none is present, sync is skipped without retries.
 - 401/403 from backend marks enrol `rotate_required` (device_token likely rotated) and schedules retry; other HTTP/network errors back off via `JobScheduler` (`PushTokenJobService`) with exponential delays. Tag: `QbitDpcPush`.
-- After successful sync, token is mirrored to Core via application restrictions (`setApplicationRestrictions` on `com.qubit.mqttcore` with keys `fcm_registration_token`, `fcm_token_updated_at`) and broadcast `com.qubit.mqttcore.ACTION_FCM_TOKEN_REGISTERED`.
-- If token is intentionally empty/disabled, DPC posts `{ "enabled": true/false, "token": "" }`, writes an empty string to restrictions, and asks Core to generate a new one.
+- If token is intentionally empty/disabled, DPC posts `{ "enabled": true/false, "token": "" }` and clears the cached token locally.
 
 ## MQTT Core credentials handoff
-- Provider authority: `com.afwsamples.testdpc.mqttcredentials`, URI `content://com.afwsamples.testdpc.mqttcredentials/credentials`.
+- Provider authority: `mdm.qubit.dpc.mqttcredentials`, URI `content://mdm.qubit.dpc.mqttcredentials/credentials`.
 - Columns: `device_id`, `mqtt_password`.
-- Access: exported, gated to caller package `com.qubit.mqttcore` or self.
+- Access: provider is now internal-only (`android:exported="false"`); no external callers.

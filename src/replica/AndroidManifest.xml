@@ -18,7 +18,7 @@
     <application>
         <provider xmlns:tools="http://schemas.android.com/tools"
             tools:replace="android:authorities"
-            android:authorities="com.afwsamples.testdpc.replica.fileprovider"
+            android:authorities="mdm.qubit.dpc.replica.fileprovider"
             android:name="androidx.core.content.FileProvider"
             android:grantUriPermissions="true"
             android:exported="false">
@@ -28,8 +28,8 @@
         </provider>
         <provider xmlns:tools="http://schemas.android.com/tools"
                 tools:replace="android:authorities"
-                android:authorities="com.afwsamples.testdpc.replica.usericoncontentprovider"
-                android:name="com.afwsamples.testdpc.UserIconContentProvider"
+                android:authorities="mdm.qubit.dpc.replica.usericoncontentprovider"
+                android:name="mdm.qubit.dpc.UserIconContentProvider"
                 android:grantUriPermissions="true"
                 android:exported="true">
         </provider>
