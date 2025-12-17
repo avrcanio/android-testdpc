@@ -19,8 +19,8 @@
     xmlns:tools="http://schemas.android.com/tools"
           package="mdm.qubit.dpc"
           tools:ignore="MissingClass"
-    android:versionCode="9020"
-    android:versionName="9.0.20">
+    android:versionCode="9021"
+    android:versionName="9.0.21">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34"/>
 
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
@@ -125,16 +125,17 @@
                 android:taskAffinity="">
         </activity>
 
-        <activity-alias
-                android:name=".SetupManagementLaunchActivity"
-                android:exported="true"
-                android:targetActivity=".SetupManagementActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-                <category android:name="android.intent.category.INFO"/>
-            </intent-filter>
-        </activity-alias>
+         <activity-alias
+                 android:name=".SetupManagementLaunchActivity"
+                 android:enabled="@bool/enable_setup_management_launcher"
+                 android:exported="true"
+                 android:targetActivity=".SetupManagementActivity">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN"/>
+                 <category android:name="android.intent.category.LAUNCHER"/>
+                 <category android:name="android.intent.category.INFO"/>
+             </intent-filter>
+         </activity-alias>
 
         <activity
                 android:name=".AddAccountActivity"

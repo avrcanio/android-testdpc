@@ -56,7 +56,7 @@ public class LiteMqttConfig {
   }
 
   public void setUsername(String username) {
-    prefs.edit().putString(KEY_USERNAME, username).apply();
+    putOrRemove(KEY_USERNAME, username);
   }
 
   public String getPassword() {
@@ -64,7 +64,7 @@ public class LiteMqttConfig {
   }
 
   public void setPassword(String password) {
-    prefs.edit().putString(KEY_PASSWORD, password).apply();
+    putOrRemove(KEY_PASSWORD, password);
   }
 
   public String getQid() {
@@ -72,7 +72,7 @@ public class LiteMqttConfig {
   }
 
   public void setQid(String qid) {
-    prefs.edit().putString(KEY_QID, qid).apply();
+    putOrRemove(KEY_QID, qid);
   }
 
   public String getClientId() {
@@ -84,8 +84,12 @@ public class LiteMqttConfig {
     return stored;
   }
 
+  public String getStoredClientId() {
+    return prefs.getString(KEY_CLIENT_ID, null);
+  }
+
   public void setClientId(String clientId) {
-    prefs.edit().putString(KEY_CLIENT_ID, clientId).apply();
+    putOrRemove(KEY_CLIENT_ID, clientId);
   }
 
   public boolean isTlsEnabled() {
@@ -94,5 +98,15 @@ public class LiteMqttConfig {
 
   public void setTlsEnabled(boolean enabled) {
     prefs.edit().putBoolean(KEY_TLS_ENABLED, enabled).apply();
+  }
+
+  private void putOrRemove(String key, String value) {
+    SharedPreferences.Editor editor = prefs.edit();
+    if (value == null) {
+      editor.remove(key);
+    } else {
+      editor.putString(key, value);
+    }
+    editor.apply();
   }
 }

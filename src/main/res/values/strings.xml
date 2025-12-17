@@ -284,7 +284,6 @@
     <string name="lite_title">Qbit DPC (Lite)</string>
     <string name="lite_device_id_label">Device ID</string>
     <string name="lite_enrol_token_label">Enrol token</string>
-    <string name="lite_enrol_button">Enrol</string>
     <string name="lite_enrol_all_button">Enrol All</string>
     <string name="lite_enrol_all_check_vpn">Check VPN</string>
     <string name="lite_enrol_all_done">Enrol done</string>

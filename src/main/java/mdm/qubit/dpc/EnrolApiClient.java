@@ -10,6 +10,7 @@ import android.widget.Toast;
 import mdm.qubit.dpc.common.Util;
 import mdm.qubit.dpc.mdm.FcmPushManager;
 import mdm.qubit.dpc.mdm.MqttCredentialRefresher;
+import mdm.qubit.dpc.lite.LiteMqttAutoConfigurator;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -152,6 +153,8 @@ public class EnrolApiClient {
         JSONObject json = new JSONObject(result.responseBody);
         EnrolState state = new EnrolState(appContext);
         state.saveFromResponse(json);
+        // Best-effort: if enrol response includes MQTT password, apply to lite config immediately.
+        LiteMqttAutoConfigurator.applyFromEnrol(appContext, null, null);
         result.success = true;
         // Immediately fetch pending MQTT credentials so UI fields are populated post-enrol.
         MqttCredentialRefresher.refresh(appContext);

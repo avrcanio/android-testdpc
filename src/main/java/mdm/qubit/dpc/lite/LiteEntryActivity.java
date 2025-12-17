@@ -62,6 +62,8 @@ public class LiteEntryActivity extends Activity {
   private static final boolean TAILSCALE_FORCE_ENABLED = true;
   private static final long VPN_TIMEOUT_MS = 90000L;
   private static final long VPN_POLL_INTERVAL_MS = 3000L;
+  private static final long MQTT_AUTOSTART_RETRY_MS = 2000L;
+  private static final int MQTT_AUTOSTART_MAX_ATTEMPTS = 15;
 
   private TextView mDeviceIdView;
   private TextView mEnrolTokenView;
@@ -82,6 +84,8 @@ public class LiteEntryActivity extends Activity {
   private Handler mHandler;
   private boolean mTailscaleBusy = false;
   private Runnable mAuthKeyCleanupRunnable;
+  private Runnable mMqttAutoStartRunnable;
+  private int mMqttAutoStartAttempts = 0;
   private EnrolAllStep mEnrolAllStep = EnrolAllStep.IDLE;
   private long mVpnWaitDeadlineMs = 0L;
 
@@ -94,6 +98,7 @@ public class LiteEntryActivity extends Activity {
             mEnrolAllStep = EnrolAllStep.COMPLETED;
             stopVpnPolling();
             updateEnrolAllUi();
+            autoConfigureAndStartMqttAfterEnrol();
           }
         }
       };
@@ -101,6 +106,7 @@ public class LiteEntryActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    LiteLauncherHider.apply(this);
     setContentView(R.layout.activity_lite_entry);
     mHandler = new Handler(Looper.getMainLooper());
     IntentFilter enrolFilter = new IntentFilter(EnrolApiClient.ACTION_ENROL_STATE_UPDATED);
@@ -111,7 +117,6 @@ public class LiteEntryActivity extends Activity {
     }
     mDeviceIdView = findViewById(R.id.device_id_value);
     mEnrolTokenView = findViewById(R.id.enrol_token_value);
-    Button enrolButton = findViewById(R.id.enrol_button);
     mEnrolAllButton = findViewById(R.id.enrol_all_button);
     Button refreshButton = findViewById(R.id.refresh_button);
     Button syncButton = findViewById(R.id.sync_button);
@@ -121,8 +126,6 @@ public class LiteEntryActivity extends Activity {
     mTailscaleButton = findViewById(R.id.tailscale_config_button);
     Button refreshExtrasButton = findViewById(R.id.refresh_extras_button);
     setupMqttUi();
-    enrolButton.setOnClickListener(
-        (View v) -> EnrolApiClient.enrolWithSavedToken(LiteEntryActivity.this));
     mEnrolAllButton.setOnClickListener((View v) -> handleEnrolAllButton());
     refreshButton.setOnClickListener((View v) -> refreshFields());
     syncButton.setOnClickListener((View v) -> triggerSync());
@@ -162,6 +165,7 @@ public class LiteEntryActivity extends Activity {
   @Override
   protected void onDestroy() {
     stopVpnPolling();
+    stopMqttAutoStart();
     unregisterMqttReceiver();
     try {
       unregisterReceiver(mEnrolStateReceiver);
@@ -231,10 +235,10 @@ public class LiteEntryActivity extends Activity {
     String deviceId = enrolState.getDeviceId();
     String savedUser = cfg.getUsername();
     String savedQid = cfg.getQid();
-    mqttUserField.setText(savedUser != null ? savedUser : deviceId);
-    mqttQidField.setText(savedQid != null ? savedQid : deviceId);
+    mqttUserField.setText(!isBlank(savedUser) ? savedUser : deviceId);
+    mqttQidField.setText(!isBlank(savedQid) ? savedQid : deviceId);
     String savedPassword = cfg.getPassword();
-    mqttPassField.setText(savedPassword != null ? savedPassword : enrolState.getMqttPassword());
+    mqttPassField.setText(!isBlank(savedPassword) ? savedPassword : enrolState.getMqttPassword());
     mqttClientIdField.setText(cfg.getClientId());
     mqttTlsField.setChecked(cfg.isTlsEnabled());
     setMqttFieldsEnabled(false);
@@ -262,11 +266,105 @@ public class LiteEntryActivity extends Activity {
     cfg.setHost(mqttHostField.getText().toString().trim());
     cfg.setPort(parsePort(mqttPortField.getText().toString().trim()));
     cfg.setPath(mqttPathField.getText().toString().trim());
-    cfg.setUsername(mqttUserField.getText().toString().trim());
-    cfg.setPassword(mqttPassField.getText().toString());
-    cfg.setQid(mqttQidField.getText().toString().trim());
-    cfg.setClientId(mqttClientIdField.getText().toString().trim());
+    cfg.setUsername(nullIfBlank(mqttUserField.getText().toString()));
+    cfg.setPassword(nullIfBlank(mqttPassField.getText().toString()));
+    cfg.setQid(nullIfBlank(mqttQidField.getText().toString()));
+    cfg.setClientId(nullIfBlank(mqttClientIdField.getText().toString()));
     cfg.setTlsEnabled(mqttTlsField.isChecked());
+  }
+
+  private void autoConfigureAndStartMqttAfterEnrol() {
+    stopMqttAutoStart();
+    EnrolState enrolState = new EnrolState(this);
+    String deviceId = enrolState.getDeviceId();
+    String password = enrolState.getMqttPassword();
+    if (isBlank(deviceId) || isBlank(password)) {
+      Log.w(TAG, "Enrol completed but missing MQTT creds; will retry auto-start");
+      scheduleMqttAutoStartRetry();
+      return;
+    }
+
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    boolean changed = false;
+    if (isBlank(cfg.getUsername())) {
+      cfg.setUsername(deviceId);
+      changed = true;
+    }
+    if (isBlank(cfg.getQid())) {
+      cfg.setQid(deviceId);
+      changed = true;
+    }
+    if (isBlank(cfg.getPassword())) {
+      cfg.setPassword(password);
+      changed = true;
+    }
+
+    if (mqttUiInitialized) {
+      if (mqttUserField != null && isBlank(mqttUserField.getText().toString())) {
+        mqttUserField.setText(deviceId);
+      }
+      if (mqttQidField != null && isBlank(mqttQidField.getText().toString())) {
+        mqttQidField.setText(deviceId);
+      }
+      if (mqttPassField != null && isBlank(mqttPassField.getText().toString())) {
+        mqttPassField.setText(password);
+      }
+    }
+
+    if (changed) {
+      Log.i(TAG, "Auto-filled lite MQTT creds from enrol state");
+    }
+
+    Intent startIntent = new Intent(this, LiteMqttService.class);
+    startIntent.setAction(LiteMqttService.ACTION_START);
+    startService(startIntent);
+  }
+
+  private void scheduleMqttAutoStartRetry() {
+    mMqttAutoStartAttempts = 0;
+    mMqttAutoStartRunnable =
+        new Runnable() {
+          @Override
+          public void run() {
+            mMqttAutoStartAttempts++;
+            EnrolState enrolState = new EnrolState(LiteEntryActivity.this);
+            String deviceId = enrolState.getDeviceId();
+            String password = enrolState.getMqttPassword();
+            if (!isBlank(deviceId) && !isBlank(password)) {
+              Log.i(TAG, "MQTT creds available after enrol; auto-starting");
+              autoConfigureAndStartMqttAfterEnrol();
+              return;
+            }
+            if (mMqttAutoStartAttempts >= MQTT_AUTOSTART_MAX_ATTEMPTS) {
+              Log.w(TAG, "MQTT auto-start retry exhausted; creds still missing");
+              stopMqttAutoStart();
+              return;
+            }
+            mHandler.postDelayed(this, MQTT_AUTOSTART_RETRY_MS);
+          }
+        };
+    mHandler.postDelayed(mMqttAutoStartRunnable, MQTT_AUTOSTART_RETRY_MS);
+  }
+
+  private void stopMqttAutoStart() {
+    if (mHandler == null || mMqttAutoStartRunnable == null) {
+      return;
+    }
+    mHandler.removeCallbacks(mMqttAutoStartRunnable);
+    mMqttAutoStartRunnable = null;
+    mMqttAutoStartAttempts = 0;
+  }
+
+  private static boolean isBlank(String value) {
+    return value == null || value.trim().isEmpty();
+  }
+
+  private static String nullIfBlank(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   private void updateMqttStatus(String status, String error) {

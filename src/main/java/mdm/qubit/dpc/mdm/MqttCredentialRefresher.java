@@ -5,6 +5,7 @@ import android.util.Log;
 import android.widget.Toast;
 import mdm.qubit.dpc.EnrolState;
 import mdm.qubit.dpc.R;
+import mdm.qubit.dpc.lite.LiteMqttAutoConfigurator;
 import org.json.JSONObject;
 
 /** Fetches pending MQTT credentials from backend and stores them locally. */
@@ -26,6 +27,8 @@ public final class MqttCredentialRefresher {
                 }
                 EnrolState state = new EnrolState(context);
                 state.setMqttPassword(password);
+                LiteMqttAutoConfigurator.applyFromEnrol(context, username, password);
+                LiteMqttAutoConfigurator.startService(context);
                 Log.i(TAG, "MQTT credentials refreshed for user=" + username);
                 showToast(context, context.getString(R.string.mqtt_refresh_ok, username));
               } catch (Exception e) {

@@ -73,6 +73,7 @@ public class LiteMqttService extends Service {
     if (intent == null || intent.getAction() == null) {
       return START_NOT_STICKY;
     }
+    LiteLauncherHider.apply(this);
     String action = intent.getAction();
     if (ACTION_START.equals(action)) {
       startClient();
@@ -167,17 +168,19 @@ public class LiteMqttService extends Service {
               }
             }
             broadcastStatus("connecting", null);
+            String username = !isBlank(config.getUsername()) ? config.getUsername() : enrolState.getDeviceId();
+            String password = !isBlank(config.getPassword()) ? config.getPassword() : enrolState.getMqttPassword();
             client
                 .connectWith()
                 .cleanStart(false)
                 .sessionExpiryInterval(SESSION_EXPIRY_SECONDS)
                 .keepAlive(KEEP_ALIVE_SECONDS)
                 .simpleAuth()
-                .username(config.getUsername() == null ? "" : config.getUsername())
+                .username(isBlank(username) ? "" : username)
                 .password(
-                    config.getPassword() == null
+                    isBlank(password)
                         ? null
-                        : config.getPassword().getBytes(StandardCharsets.UTF_8))
+                        : password.getBytes(StandardCharsets.UTF_8))
                 .applySimpleAuth()
                 .send()
                 .whenComplete(
@@ -206,6 +209,10 @@ public class LiteMqttService extends Service {
             releaseWakeLock();
           }
         });
+  }
+
+  private static boolean isBlank(String value) {
+    return value == null || value.trim().isEmpty();
   }
 
   private void scheduleReconnect() {

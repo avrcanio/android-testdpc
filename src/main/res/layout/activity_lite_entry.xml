@@ -43,27 +43,12 @@
             android:layout_height="wrap_content"
             android:textAppearance="?android:attr/textAppearanceMedium" />
 
-        <LinearLayout
+        <Button
+            android:id="@+id/refresh_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/enrol_button"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/lite_enrol_button" />
-
-            <Button
-                android:id="@+id/refresh_button"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:text="@string/lite_refresh_button" />
-        </LinearLayout>
+            android:text="@string/lite_refresh_button" />
 
         <Button
             android:id="@+id/enrol_all_button"
