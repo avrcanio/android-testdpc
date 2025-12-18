@@ -13,8 +13,8 @@ REM     set UPLOAD_KEYSTORE_PASS=...
 REM     set UPLOAD_KEY_PASS=...
 
 REM NOTE: Hardcoded defaults (requested). Consider removing before sharing the repo.
-if "%UPLOAD_KEYSTORE_PASS%"=="" set "UPLOAD_KEYSTORE_PASS=UploadPass123!"
-if "%UPLOAD_KEY_PASS%"=="" set "UPLOAD_KEY_PASS=UploadPass123!"
+if "%UPLOAD_KEYSTORE_PASS%"=="" set "UPLOAD_KEYSTORE_PASS=V7p!fN2qZr#8kLc0"
+if "%UPLOAD_KEY_PASS%"=="" set "UPLOAD_KEY_PASS=V7p!fN2qZr#8kLc0"
 
 if "%UPLOAD_KEYSTORE_PASS%"=="" (
   echo ERROR: Missing UPLOAD_KEYSTORE_PASS environment variable.

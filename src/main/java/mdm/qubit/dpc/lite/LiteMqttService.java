@@ -27,6 +27,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Lightweight MQTT service that connects over WSS using HiveMQ MQTT 5 async client.
@@ -59,9 +60,11 @@ public class LiteMqttService extends Service {
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "lite-mqtt"));
   private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
+  private final AtomicBoolean connecting = new AtomicBoolean(false);
 
   private Mqtt5AsyncClient client;
   private ScheduledFuture<?> heartbeatTask;
+  private ScheduledFuture<?> reconnectTask;
 
   private ScheduledFuture<?> bootVpnWaitTask;
   private long bootDeadlineMs = 0L;
@@ -75,6 +78,7 @@ public class LiteMqttService extends Service {
     }
     LiteLauncherHider.apply(this);
     String action = intent.getAction();
+    logToFile("onStartCommand action=" + action);
     if (ACTION_START.equals(action)) {
       startClient();
     } else if (ACTION_STOP.equals(action)) {
@@ -100,9 +104,14 @@ public class LiteMqttService extends Service {
 
   private void startClient() {
     ensureForeground();
-    if (client != null && client.getState() == MqttClientState.CONNECTED) {
-      broadcastStatus("connected", null);
-      logToFile("MQTT startClient: already connected");
+    if (isClientConnectingOrConnected() || connecting.get()) {
+      broadcastStatus("connecting", null);
+      logToFile("MQTT startClient: already connecting/connected, skip");
+      return;
+    }
+    if (!connecting.compareAndSet(false, true)) {
+      broadcastStatus("connecting", null);
+      logToFile("MQTT startClient: connecting flag already set, skip");
       return;
     }
     logToFile("MQTT startClient: connecting...");
@@ -135,6 +144,10 @@ public class LiteMqttService extends Service {
   }
 
   private void connectWithBackoff() {
+    // connecting flag is set by caller (startClient/scheduleReconnect)
+    if (!connecting.get()) {
+      connecting.set(true);
+    }
     executor.execute(
         () -> {
           acquireWakeLock(60000L);
@@ -189,6 +202,7 @@ public class LiteMqttService extends Service {
                         Log.w(TAG, "MQTT connect failed", error);
                         logToFile("MQTT connect failed: " + error.getMessage());
                         broadcastStatus("error", error.getMessage());
+                        connecting.set(false);
                         scheduleReconnect();
                         releaseWakeLock();
                         return;
@@ -196,6 +210,8 @@ public class LiteMqttService extends Service {
                       Log.i(TAG, "MQTT connected");
                       logToFile("MQTT connected ok");
                       reconnectAttempts.set(0);
+                      connecting.set(false);
+                      cancelReconnectTask();
                       broadcastStatus("connected", null);
                       subscribeNotify(enrolState.getDeviceId());
                       registerMessageHandler();
@@ -205,6 +221,7 @@ public class LiteMqttService extends Service {
           } catch (Exception e) {
             Log.w(TAG, "MQTT connection setup failed", e);
             broadcastStatus("error", e.getMessage());
+            connecting.set(false);
             scheduleReconnect();
             releaseWakeLock();
           }
@@ -216,11 +233,21 @@ public class LiteMqttService extends Service {
   }
 
   private void scheduleReconnect() {
+    if (client != null && client.getState() == MqttClientState.CONNECTED) {
+      logToFile("MQTT reconnect skipped: client already connected");
+      return;
+    }
+    if (connecting.get()) {
+      logToFile("MQTT reconnect skipped: already connecting");
+      return;
+    }
     int attempt = reconnectAttempts.incrementAndGet();
     long delay = Math.min(30000L, 2000L * attempt);
     broadcastStatus("reconnecting", "retry in " + delay + "ms");
     logToFile("MQTT reconnect attempt " + attempt + " in " + delay + "ms");
-    executor.schedule(this::connectWithBackoff, delay, TimeUnit.MILLISECONDS);
+    cancelReconnectTask();
+    connecting.set(true);
+    reconnectTask = executor.schedule(this::connectWithBackoff, delay, TimeUnit.MILLISECONDS);
   }
 
   private void ensureForeground() {
@@ -251,6 +278,8 @@ public class LiteMqttService extends Service {
 
   private void stopClient() {
     releaseWakeLock();
+    cancelReconnectTask();
+    connecting.set(false);
     
     cancelBootVpnWait();
     if (heartbeatTask != null) {
@@ -288,7 +317,7 @@ public class LiteMqttService extends Service {
   }
 
   private void sendHeartbeat(LiteMqttConfig config, String deviceId) {
-    if (client == null || client.getState() != MqttClientState.CONNECTED) {
+    if (client == null || client.getState() != MqttClientState.CONNECTED || connecting.get()) {
       scheduleReconnect();
       return;
     }
@@ -433,7 +462,20 @@ public class LiteMqttService extends Service {
       bootVpnWaitTask = null;
     }
   }
+  private void cancelReconnectTask() {
+    if (reconnectTask != null) {
+      reconnectTask.cancel(true);
+      reconnectTask = null;
+    }
+  }
 
+  private boolean isClientConnectingOrConnected() {
+    if (client == null) {
+      return false;
+    }
+    MqttClientState state = client.getState();
+    return state == MqttClientState.CONNECTED || state == MqttClientState.CONNECTING;
+  }
 
 
   private boolean isVpnUp() {

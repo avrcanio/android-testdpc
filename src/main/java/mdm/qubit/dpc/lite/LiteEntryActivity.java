@@ -315,6 +315,12 @@ public class LiteEntryActivity extends Activity {
       Log.i(TAG, "Auto-filled lite MQTT creds from enrol state");
     }
 
+    String lastStatus = LiteMqttService.getLastStatus();
+    if ("connecting".equals(lastStatus) || "connected".equals(lastStatus)) {
+      Log.i(TAG, "MQTT already " + lastStatus + "; skipping auto-start after enrol");
+      return;
+    }
+
     Intent startIntent = new Intent(this, LiteMqttService.class);
     startIntent.setAction(LiteMqttService.ACTION_START);
     startService(startIntent);
