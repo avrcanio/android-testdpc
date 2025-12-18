@@ -66,6 +66,8 @@ if not exist "bazel-bin\testdpc.apk" (
   --ks-key-alias "upload" ^
   --ks-pass "pass:%UPLOAD_KEYSTORE_PASS%" ^
   --key-pass "pass:%UPLOAD_KEY_PASS%" ^
+  --v3-signing-enabled true ^
+  --v4-signing-enabled true ^
   --out "bazel-bin\testdpc-lite-release.apk" ^
   "bazel-bin\testdpc-lite-aligned.apk"
 

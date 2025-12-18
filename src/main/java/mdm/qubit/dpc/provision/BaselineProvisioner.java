@@ -3,6 +3,9 @@ package mdm.qubit.dpc.provision;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,6 +28,8 @@ import org.json.JSONObject;
 public final class BaselineProvisioner {
   private static final String TAG = "BaselineProvisioner";
   private static final int HTTP_TIMEOUT_MS = 15000;
+  private static final int NET_RETRY_MS = 3000;
+  private static final int NET_MAX_RETRIES = 3;
   private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
 
   private BaselineProvisioner() {}
@@ -54,6 +59,11 @@ public final class BaselineProvisioner {
                         + (supportUrl != null));
                 boolean installsOk = fetchAndInstall(app, apkIndexUrl, supportUrl, requestId);
                 if (enrolToken != null && !enrolToken.isEmpty()) {
+                  if (!waitForNetwork(app, requestId)) {
+                    FileLogger.log(app, TAG + " enrol skipped: no network reqId=" + requestId);
+                    notifySupport(app, supportUrl, "Enrol skipped: no network connectivity");
+                    return;
+                  }
                   EnrolApiClient.EnrolResult result =
                       EnrolApiClient.enrolBlocking(app, enrolToken);
                   if (result.success) {
@@ -153,6 +163,35 @@ public final class BaselineProvisioner {
       }
     }
     return allOk;
+  }
+
+  private static boolean waitForNetwork(Context context, String requestId) {
+    ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+    for (int attempt = 0; attempt <= NET_MAX_RETRIES; attempt++) {
+      if (cm != null) {
+        Network active = cm.getActiveNetwork();
+        NetworkCapabilities caps = active != null ? cm.getNetworkCapabilities(active) : null;
+        boolean up =
+            caps != null
+                && (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    || caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+        if (up) {
+          FileLogger.log(context, TAG + " network ok before enrol reqId=" + requestId + " attempt=" + attempt);
+          return true;
+        }
+      }
+      if (attempt == NET_MAX_RETRIES) {
+        break;
+      }
+      try {
+        Thread.sleep(NET_RETRY_MS);
+      } catch (InterruptedException ignore) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    FileLogger.log(context, TAG + " network unavailable before enrol reqId=" + requestId);
+    return false;
   }
 
   private static JSONObject downloadIndex(Context context, String urlStr, String requestId) {

@@ -65,6 +65,13 @@ public class FinalizeActivity extends Activity {
     if (adminExtras != null) {
       enrolToken = adminExtras.getString("enrol_token");
       apkIndexUrl = adminExtras.getString("apk_index_url");
+      // Fallback: some devices don't pass PROVISIONING_SUPPORT_URL; read from admin extras.
+      if (supportUrl == null) {
+        supportUrl = adminExtras.getString("support_url");
+        if (supportUrl != null) {
+          FileLogger.log(this, "FinalizeActivity: support_url from adminExtras");
+        }
+      }
       String tsLoginUrl = adminExtras.getString("LoginURL");
       String tsAuthKey = adminExtras.getString("AuthKey");
       String tsHostname = adminExtras.getString("Hostname");

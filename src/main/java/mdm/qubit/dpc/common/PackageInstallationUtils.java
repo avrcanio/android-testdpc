@@ -62,18 +62,25 @@ public class PackageInstallationUtils {
 
   @SuppressWarnings("UnspecifiedImmutableFlag") // TODO(b/210723613): proper fix
   private static IntentSender createInstallIntentSender(Context context, int sessionId) {
+    final Intent intent =
+        new Intent(ACTION_INSTALL_COMPLETE).setPackage(context.getPackageName());
     final PendingIntent pendingIntent =
-        PendingIntent.getBroadcast(context, sessionId, new Intent(ACTION_INSTALL_COMPLETE),
-            PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent.getBroadcast(
+            context, sessionId, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
     return pendingIntent.getIntentSender();
   }
 
   @SuppressWarnings("UnspecifiedImmutableFlag") // TODO(b/210723613): proper fix
   private static IntentSender createUninstallIntentSender(Context context, String packageName) {
-    final Intent intent = new Intent(ACTION_UNINSTALL_COMPLETE);
+    final Intent intent =
+        new Intent(ACTION_UNINSTALL_COMPLETE).setPackage(context.getPackageName());
     intent.putExtra(Intent.EXTRA_PACKAGE_NAME, packageName);
-    final PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, intent,
-        PendingIntent.FLAG_IMMUTABLE);
+    final PendingIntent pendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     return pendingIntent.getIntentSender();
   }
 }
