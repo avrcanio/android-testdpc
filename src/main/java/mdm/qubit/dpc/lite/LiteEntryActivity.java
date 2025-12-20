@@ -190,6 +190,7 @@ public class LiteEntryActivity extends Activity {
     }
     updateEnrolAllUi();
     registerMqttReceiver();
+    maybeAutoStartMqttOnResume();
   }
 
   @Override
@@ -203,9 +204,10 @@ public class LiteEntryActivity extends Activity {
     EnrolConfig config = new EnrolConfig(this);
     String deviceId = state.getDeviceId();
     String token = config.getEnrolToken();
-    mDeviceIdView.setText(deviceId == null ? getString(R.string.enrol_device_id_empty) : deviceId);
-    mEnrolTokenView.setText(token == null ? getString(R.string.enrol_token_empty) : token);
-    if (deviceId != null && mEnrolAllStep == EnrolAllStep.IDLE) {
+    mDeviceIdView.setText(
+        isBlank(deviceId) ? getString(R.string.enrol_device_id_empty) : deviceId);
+    mEnrolTokenView.setText(isBlank(token) ? getString(R.string.enrol_token_empty) : token);
+    if (!isBlank(deviceId) && mEnrolAllStep == EnrolAllStep.IDLE) {
       mEnrolAllStep = EnrolAllStep.COMPLETED;
       updateEnrolAllUi();
     }
@@ -326,6 +328,56 @@ public class LiteEntryActivity extends Activity {
     startService(startIntent);
   }
 
+  private void maybeAutoStartMqttOnResume() {
+    String lastStatus = LiteMqttService.getLastStatus();
+    if ("connecting".equals(lastStatus) || "connected".equals(lastStatus)) {
+      return;
+    }
+    EnrolState enrolState = new EnrolState(this);
+    String deviceId = enrolState.getDeviceId();
+    String password = enrolState.getMqttPassword();
+    if (isBlank(deviceId) || isBlank(password)) {
+      return;
+    }
+    if (!isVpnUp()) {
+      Log.i(TAG, "VPN not up; skip MQTT auto-start on resume");
+      return;
+    }
+
+    LiteMqttConfig cfg = new LiteMqttConfig(this);
+    boolean changed = false;
+    if (isBlank(cfg.getUsername())) {
+      cfg.setUsername(deviceId);
+      changed = true;
+    }
+    if (isBlank(cfg.getQid())) {
+      cfg.setQid(deviceId);
+      changed = true;
+    }
+    if (isBlank(cfg.getPassword())) {
+      cfg.setPassword(password);
+      changed = true;
+    }
+    if (mqttUiInitialized) {
+      if (mqttUserField != null && isBlank(mqttUserField.getText().toString())) {
+        mqttUserField.setText(deviceId);
+      }
+      if (mqttQidField != null && isBlank(mqttQidField.getText().toString())) {
+        mqttQidField.setText(deviceId);
+      }
+      if (mqttPassField != null && isBlank(mqttPassField.getText().toString())) {
+        mqttPassField.setText(password);
+      }
+    }
+    if (changed) {
+      Log.i(TAG, "Auto-filled lite MQTT creds from enrol state on resume");
+    }
+
+    Intent startIntent = new Intent(this, LiteMqttService.class);
+    startIntent.setAction(LiteMqttService.ACTION_START);
+    startService(startIntent);
+  }
+
   private void scheduleMqttAutoStartRetry() {
     mMqttAutoStartAttempts = 0;
     mMqttAutoStartRunnable =
@@ -359,6 +411,19 @@ public class LiteEntryActivity extends Activity {
     mHandler.removeCallbacks(mMqttAutoStartRunnable);
     mMqttAutoStartRunnable = null;
     mMqttAutoStartAttempts = 0;
+  }
+
+  private boolean isVpnUp() {
+    ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+    if (cm == null) {
+      return false;
+    }
+    Network active = cm.getActiveNetwork();
+    if (active == null) {
+      return false;
+    }
+    NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+    return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
   }
 
   private static boolean isBlank(String value) {
@@ -883,19 +948,6 @@ public class LiteEntryActivity extends Activity {
     } else {
       Toast.makeText(this, R.string.lite_enrol_all_waiting_vpn, Toast.LENGTH_SHORT).show();
     }
-  }
-
-  private boolean isVpnUp() {
-    ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-    if (cm == null) {
-      return false;
-    }
-    Network active = cm.getActiveNetwork();
-    if (active == null) {
-      return false;
-    }
-    NetworkCapabilities caps = cm.getNetworkCapabilities(active);
-    return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
   }
 
   private void clearAuthKeyAfterVpn() {

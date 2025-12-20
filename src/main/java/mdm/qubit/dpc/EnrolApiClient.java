@@ -158,6 +158,8 @@ public class EnrolApiClient {
         result.success = true;
         // Immediately fetch pending MQTT credentials so UI fields are populated post-enrol.
         MqttCredentialRefresher.refresh(appContext);
+        // Post fresh inventory right after enrol.
+        mdm.qubit.dpc.mdm.MdmSyncManager.sendInventoryNow(appContext, result.requestId);
         FileLogger.log(
             appContext,
             "EnrolApi success reqId="

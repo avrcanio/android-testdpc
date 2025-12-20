@@ -1,0 +1,39 @@
+{"reason": "", "packages": ["com.google.android.gms"], "suspended": true, "release_id": 22}
+{"hidden": true, "packages": ["com.google.android.apps.tips"], "release_id": 23}
+{"hidden": true, "packages": ["com.google.android.gms"], "release_id": 24}
+{"hidden": true, "packages": ["com.google.android.apps.safetyhub"], "release_id": 22}
+{"hidden": false, "packages": ["com.google.android.apps.nbu.files"], "release_id": 20}
+{"reason": "", "packages": ["com.google.android.apps.nbu.files"], "suspended": false, "release_id": 20}
+{"restrictions": {"no_install_apps": true}}
+{"hidden": true, "packages": ["com.google.android.apps.safetyhub"], "release_id": 22}
+{"restrictions": {"no_debugging_features": true}}
+{"enabled": false}
+{"restrictions": {"no_config_location": true}}
+{"restrictions": {"no_config_tethering": true}}
+{"restrictions": {"no_usb_file_transfer": true}}
+{"restrictions": {"no_install_apps": false}}
+{"restrictions": {"no_install_apps": true}}
+
+
+{"hidden": true, "packages": ["com.google.android.googlequicksearchbox"], "release_id": 19}
+{"reason": "", "packages": ["com.google.android.googlequicksearchbox"], "suspended": true, "release_id": 19}
+{"reason": "", "packages": ["com.google.android.googlequicksearchbox"], "suspended": false, "release_id": 19}
+
+{"hidden": false, "packages": ["com.google.android.apps.nbu.files"], "release_id": 20}
+{"hidden": true, "packages": ["com.google.android.apps.messaging"], "release_id": 16}
+
+{"reason": "", "packages": ["com.google.android.gms"], "suspended": false, "release_id": 24}
+{"reason": "", "packages": ["com.google.android.gms"], "suspended": true, "release_id": 24}
+
+{"reason": "", "packages": ["com.google.android.gms"], "suspended": true, "release_id": 24}
+
+{"reason": "", "packages": ["com.google.android.dialer"], "suspended": true, "release_id": 17}
+
+{"hidden": true, "packages": ["com.android.vending"], "release_id": 18}
+
+{"hidden": true, "packages": ["com.android.vending"], "release_id": 18}
+
+
+
+
+

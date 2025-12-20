@@ -10,30 +10,15 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.IBinder;
-import android.os.PowerManager;
 import android.content.pm.ServiceInfo;
-import android.util.Log;
 import androidx.core.app.NotificationCompat;
-import mdm.qubit.dpc.FileLogger;
-import com.hivemq.client.mqtt.MqttClient;
-import com.hivemq.client.mqtt.MqttClientState;
-import com.hivemq.client.mqtt.datatypes.MqttQos;
-import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
-import mdm.qubit.dpc.EnrolState;
-import mdm.qubit.dpc.mdm.MdmSyncManager;
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Lightweight MQTT service that connects over WSS using HiveMQ MQTT 5 async client.
- *
- * <p>Configuration is loaded from {@link LiteMqttConfig}. Status updates are broadcast via {@link
- * #ACTION_STATUS_BROADCAST}.
+ * Lightweight MQTT service that delegates MQTT handling to {@link LiteMqttController}.
  */
 public class LiteMqttService extends Service {
 
@@ -45,31 +30,25 @@ public class LiteMqttService extends Service {
   public static final String EXTRA_STATUS = "status";
   public static final String EXTRA_ERROR = "error";
 
-  private static final String TAG = "LiteMqttService";
-  private static final long SESSION_EXPIRY_SECONDS = 24 * 60 * 60;
-  private static final int KEEP_ALIVE_SECONDS = 120;
-  private static final long HEARTBEAT_INTERVAL_SECONDS = 60L;
   private static final long BOOT_VPN_TIMEOUT_MS = 60000L;
   private static final long BOOT_VPN_RETRY_MS = 5000L;
 
-
   private static final String CHANNEL_ID = "lite_mqtt";
   private static final int NOTIFICATION_ID = 2002;
-  private static volatile String sLastStatus = null;
-  private static volatile String sLastError = null;
-  private final ScheduledExecutorService executor =
-      Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "lite-mqtt"));
-  private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
-  private final AtomicBoolean connecting = new AtomicBoolean(false);
 
-  private Mqtt5AsyncClient client;
-  private ScheduledFuture<?> heartbeatTask;
-  private ScheduledFuture<?> reconnectTask;
-
+  private LiteMqttController mqttController;
+  private StatusReporter statusReporter;
+  private final ScheduledExecutorService bootExecutor =
+      Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "lite-mqtt-boot"));
   private ScheduledFuture<?> bootVpnWaitTask;
   private long bootDeadlineMs = 0L;
-  private boolean publishHandlerRegistered = false;
-  private PowerManager.WakeLock wakeLock;
+
+  @Override
+  public void onCreate() {
+    super.onCreate();
+    statusReporter = new StatusReporter(this);
+    mqttController = new LiteMqttController(this);
+  }
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
@@ -82,7 +61,7 @@ public class LiteMqttService extends Service {
     if (ACTION_START.equals(action)) {
       startClient();
     } else if (ACTION_STOP.equals(action)) {
-      stopClient();
+      mqttController.stop(true);
       stopSelf();
     } else if (ACTION_BOOT_START.equals(action)) {
       startAfterVpn();
@@ -92,8 +71,13 @@ public class LiteMqttService extends Service {
 
   @Override
   public void onDestroy() {
-    stopClient();
-    executor.shutdownNow();
+    mqttController.stop(true);
+    mqttController.onDestroy();
+    cancelBootVpnWait();
+    try {
+      bootExecutor.shutdownNow();
+    } catch (Exception ignore) {
+    }
     super.onDestroy();
   }
 
@@ -104,22 +88,8 @@ public class LiteMqttService extends Service {
 
   private void startClient() {
     ensureForeground();
-    if (isClientConnectingOrConnected() || connecting.get()) {
-      broadcastStatus("connecting", null);
-      logToFile("MQTT startClient: already connecting/connected, skip");
-      return;
-    }
-    if (!connecting.compareAndSet(false, true)) {
-      broadcastStatus("connecting", null);
-      logToFile("MQTT startClient: connecting flag already set, skip");
-      return;
-    }
-    logToFile("MQTT startClient: connecting...");
-    reconnectAttempts.set(0);
-    connectWithBackoff();
+    mqttController.start();
   }
-
-  
 
   private void startAfterVpn() {
     bootDeadlineMs = System.currentTimeMillis() + BOOT_VPN_TIMEOUT_MS;
@@ -139,115 +109,8 @@ public class LiteMqttService extends Service {
       return;
     }
     bootVpnWaitTask =
-        executor.schedule(this::checkVpnAndStart, BOOT_VPN_RETRY_MS, TimeUnit.MILLISECONDS);
+        bootExecutor.schedule(this::checkVpnAndStart, BOOT_VPN_RETRY_MS, TimeUnit.MILLISECONDS);
     broadcastStatus("vpn_wait", "Waiting for VPN to start MQTT");
-  }
-
-  private void connectWithBackoff() {
-    // connecting flag is set by caller (startClient/scheduleReconnect)
-    if (!connecting.get()) {
-      connecting.set(true);
-    }
-    executor.execute(
-        () -> {
-          acquireWakeLock(60000L);
-          LiteMqttConfig config = new LiteMqttConfig(this);
-          EnrolState enrolState = new EnrolState(this);
-          try {
-            if (client == null) {
-              client =
-                  MqttClient.builder()
-                      .useMqttVersion5()
-                      .identifier(config.getClientId())
-                      .serverHost(config.getHost())
-                      .serverPort(config.getPort())
-                      .webSocketConfig()
-                      .serverPath(config.getPath())
-                      .applyWebSocketConfig()
-                      .sslWithDefaultConfig()
-                      .buildAsync();
-              if (!config.isTlsEnabled()) {
-                // recreate without SSL if TLS disabled
-                client =
-                    MqttClient.builder()
-                        .useMqttVersion5()
-                        .identifier(config.getClientId())
-                        .serverHost(config.getHost())
-                        .serverPort(config.getPort())
-                        .webSocketConfig()
-                        .serverPath(config.getPath())
-                        .applyWebSocketConfig()
-                        .buildAsync();
-              }
-            }
-            broadcastStatus("connecting", null);
-            String username = !isBlank(config.getUsername()) ? config.getUsername() : enrolState.getDeviceId();
-            String password = !isBlank(config.getPassword()) ? config.getPassword() : enrolState.getMqttPassword();
-            client
-                .connectWith()
-                .cleanStart(false)
-                .sessionExpiryInterval(SESSION_EXPIRY_SECONDS)
-                .keepAlive(KEEP_ALIVE_SECONDS)
-                .simpleAuth()
-                .username(isBlank(username) ? "" : username)
-                .password(
-                    isBlank(password)
-                        ? null
-                        : password.getBytes(StandardCharsets.UTF_8))
-                .applySimpleAuth()
-                .send()
-                .whenComplete(
-                    (ack, error) -> {
-                      if (error != null) {
-                        Log.w(TAG, "MQTT connect failed", error);
-                        logToFile("MQTT connect failed: " + error.getMessage());
-                        broadcastStatus("error", error.getMessage());
-                        connecting.set(false);
-                        scheduleReconnect();
-                        releaseWakeLock();
-                        return;
-                      }
-                      Log.i(TAG, "MQTT connected");
-                      logToFile("MQTT connected ok");
-                      reconnectAttempts.set(0);
-                      connecting.set(false);
-                      cancelReconnectTask();
-                      broadcastStatus("connected", null);
-                      subscribeNotify(enrolState.getDeviceId());
-                      registerMessageHandler();
-                      startHeartbeat(config, enrolState.getDeviceId());
-                      releaseWakeLock();
-                    });
-          } catch (Exception e) {
-            Log.w(TAG, "MQTT connection setup failed", e);
-            broadcastStatus("error", e.getMessage());
-            connecting.set(false);
-            scheduleReconnect();
-            releaseWakeLock();
-          }
-        });
-  }
-
-  private static boolean isBlank(String value) {
-    return value == null || value.trim().isEmpty();
-  }
-
-  private void scheduleReconnect() {
-    if (client != null && client.getState() == MqttClientState.CONNECTED) {
-      logToFile("MQTT reconnect skipped: client already connected");
-      return;
-    }
-    if (connecting.get()) {
-      logToFile("MQTT reconnect skipped: already connecting");
-      return;
-    }
-    int attempt = reconnectAttempts.incrementAndGet();
-    long delay = Math.min(30000L, 2000L * attempt);
-    broadcastStatus("reconnecting", "retry in " + delay + "ms");
-    logToFile("MQTT reconnect attempt " + attempt + " in " + delay + "ms");
-    cancelReconnectTask();
-    connecting.set(true);
-    reconnectTask = executor.schedule(this::connectWithBackoff, delay, TimeUnit.MILLISECONDS);
   }
 
   private void ensureForeground() {
@@ -276,185 +139,21 @@ public class LiteMqttService extends Service {
     }
   }
 
-  private void stopClient() {
-    releaseWakeLock();
-    cancelReconnectTask();
-    connecting.set(false);
-    
-    cancelBootVpnWait();
-    if (heartbeatTask != null) {
-      heartbeatTask.cancel(true);
-      heartbeatTask = null;
-    }
-    if (client != null) {
-      client
-          .disconnect()
-          .whenComplete(
-              (v, t) -> {
-                if (t != null) {
-                  Log.w(TAG, "MQTT disconnect failed", t);
-                  logToFile("MQTT disconnect failed: " + t.getMessage());
-                }
-                logToFile("MQTT stopped");
-                broadcastStatus("stopped", null);
-              });
-    } else {
-      broadcastStatus("stopped", null);
-      logToFile("MQTT stopped (no client)");
-    }
+  void logToFile(String msg) {
+    statusReporter.logToFile(msg);
   }
 
-  private void startHeartbeat(LiteMqttConfig config, String deviceId) {
-    if (heartbeatTask != null && !heartbeatTask.isCancelled()) {
-      return;
-    }
-    heartbeatTask =
-        executor.scheduleAtFixedRate(
-            () -> sendHeartbeat(config, deviceId),
-            HEARTBEAT_INTERVAL_SECONDS,
-            HEARTBEAT_INTERVAL_SECONDS,
-            TimeUnit.SECONDS);
-  }
-
-  private void sendHeartbeat(LiteMqttConfig config, String deviceId) {
-    if (client == null || client.getState() != MqttClientState.CONNECTED || connecting.get()) {
-      scheduleReconnect();
-      return;
-    }
-    acquireWakeLock(15000L);
-    String topic = heartbeatTopic(deviceId);
-    try {
-      client
-          .publishWith()
-          .topic(topic)
-          .qos(MqttQos.AT_LEAST_ONCE)
-          .payload(
-              ("{\"status\":\"ok\",\"ts\":" + System.currentTimeMillis() + "}").getBytes(
-                  StandardCharsets.UTF_8))
-          .send()
-          .whenComplete(
-              (ack, err) -> {
-                if (err != null) {
-                  Log.w(TAG, "Heartbeat publish failed", err);
-                  logToFile("Heartbeat failed: " + err.getMessage());
-                  broadcastStatus("heartbeat_error", err.getMessage());
-                  scheduleReconnect();
-                } else {
-                  broadcastStatus("heartbeat", null);
-                  logToFile("Heartbeat ok to " + topic);
-                }
-                releaseWakeLock();
-              });
-    } catch (Exception e) {
-      Log.w(TAG, "Heartbeat publish error", e);
-      broadcastStatus("heartbeat_error", e.getMessage());
-      logToFile("Heartbeat exception: " + e.getMessage());
-      scheduleReconnect();
-      releaseWakeLock();
-    }
-  }
-
-  private String heartbeatTopic(String deviceId) {
-    if (deviceId != null && !deviceId.isEmpty()) {
-      return "mdm/" + deviceId + "/state";
-    }
-    return "mdm/unknown/state";
-  }
-
-  private void subscribeNotify(String deviceId) {
-    if (client == null || client.getState() != MqttClientState.CONNECTED) {
-      return;
-    }
-    if (deviceId == null || deviceId.isEmpty()) {
-      broadcastStatus("subscribe_skipped", "missing deviceId");
-      return;
-    }
-    String topic = "mdm/" + deviceId + "/notify";
-    client
-        .subscribeWith()
-        .topicFilter(topic)
-        .qos(MqttQos.AT_LEAST_ONCE)
-        .send()
-        .whenComplete(
-            (subAck, error) -> {
-              if (error != null) {
-                Log.w(TAG, "MQTT subscribe failed for " + topic, error);
-                broadcastStatus("subscribe_error", error.getMessage());
-              } else {
-                broadcastStatus("subscribed", topic);
-                logToFile("Subscribed to " + topic);
-                triggerInboxSync("subscribe_ack");
-              }
-            });
-  }
-
-  private void registerMessageHandler() {
-    if (client == null || publishHandlerRegistered) {
-      return;
-    }
-    client
-        .publishes(
-            com.hivemq.client.mqtt.MqttGlobalPublishFilter.ALL,
-            publish -> {
-              String topic = publish.getTopic().toString();
-              if (topic.endsWith("/notify")) {
-                logToFile("Notify received on " + topic);
-                triggerInboxSync("notify");
-              }
-            });
-    publishHandlerRegistered = true;
-  }
-
-  private void triggerInboxSync(String reason) {
-    broadcastStatus("sync", reason);
-    logToFile("Trigger inbox sync: " + reason);
-    acquireWakeLock(120000L);
-    try {
-      MdmSyncManager.syncNow(
-          this,
-          (success, message) -> {
-            if (!success) {
-              Log.w(TAG, "Inbox sync failed: " + message);
-              logToFile("Inbox sync failed: " + message);
-            } else {
-              logToFile("Inbox sync ok");
-            }
-            releaseWakeLock();
-          });
-    } catch (Exception e) {
-      releaseWakeLock();
-      throw e;
-    }
-  }
-
-  private void logToFile(String msg) {
-    try {
-      FileLogger.log(this, "LiteMqttService: " + msg);
-    } catch (Exception ignore) {
-      // best-effort logging
-    }
-  }
-
-  private void broadcastStatus(String status, String error) {
-    sLastStatus = status;
-    sLastError = error;
-    Intent intent = new Intent(ACTION_STATUS_BROADCAST);
-    intent.putExtra(EXTRA_STATUS, status);
-    if (error != null) {
-      intent.putExtra(EXTRA_ERROR, error);
-    }
-    sendBroadcast(intent);
+  void broadcastStatus(String status, String error) {
+    statusReporter.broadcastStatus(status, error);
   }
 
   public static String getLastStatus() {
-    return sLastStatus;
+    return StatusReporter.getLastStatus();
   }
 
   public static String getLastError() {
-    return sLastError;
+    return StatusReporter.getLastError();
   }
-
-
 
   private void cancelBootVpnWait() {
     if (bootVpnWaitTask != null) {
@@ -462,21 +161,6 @@ public class LiteMqttService extends Service {
       bootVpnWaitTask = null;
     }
   }
-  private void cancelReconnectTask() {
-    if (reconnectTask != null) {
-      reconnectTask.cancel(true);
-      reconnectTask = null;
-    }
-  }
-
-  private boolean isClientConnectingOrConnected() {
-    if (client == null) {
-      return false;
-    }
-    MqttClientState state = client.getState();
-    return state == MqttClientState.CONNECTED || state == MqttClientState.CONNECTING;
-  }
-
 
   private boolean isVpnUp() {
     ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -489,32 +173,5 @@ public class LiteMqttService extends Service {
     }
     NetworkCapabilities caps = cm.getNetworkCapabilities(active);
     return caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
-  }
-
-  private void acquireWakeLock(long timeoutMs) {
-    if (timeoutMs <= 0) {
-      return;
-    }
-    PowerManager pm = getSystemService(PowerManager.class);
-    if (pm == null) {
-      return;
-    }
-    if (wakeLock == null) {
-      wakeLock =
-          pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LiteMqttService:mqtt_connection");
-      wakeLock.setReferenceCounted(false);
-    }
-    if (wakeLock.isHeld()) {
-      wakeLock.release();
-    }
-    wakeLock.acquire(timeoutMs);
-    logToFile("WakeLock acquired for " + timeoutMs + "ms");
-  }
-
-  private void releaseWakeLock() {
-    if (wakeLock != null && wakeLock.isHeld()) {
-      wakeLock.release();
-      logToFile("WakeLock released");
-    }
   }
 }

@@ -1469,9 +1469,27 @@ public final class MdmSyncManager {
         PendingIntent.getBroadcast(
             context,
             sessionId,
-            new Intent(PackageInstallationUtils.ACTION_INSTALL_COMPLETE),
-            PendingIntent.FLAG_IMMUTABLE);
+            new Intent(PackageInstallationUtils.ACTION_INSTALL_COMPLETE)
+                .setPackage(context.getPackageName()),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
     return pendingIntent.getIntentSender();
+  }
+
+  /** Fire-and-forget inventory upload (used after enrol). */
+  public static void sendInventoryNow(Context context, String requestId) {
+    final Context app = context.getApplicationContext();
+    final String rid = requestId != null ? requestId : Long.toHexString(System.currentTimeMillis());
+    new Thread(
+            () -> {
+              try {
+                JSONArray inventory = InventoryReporter.collect(app);
+                MdmApiClient.postInventory(app, inventory, rid);
+                log(app, rid, "Inventory posted count=" + (inventory != null ? inventory.length() : 0));
+              } catch (Exception e) {
+                log(app, rid, "Inventory post failed: " + e.getMessage());
+              }
+            })
+        .start();
   }
 
   private static final class DownloadedFile {
