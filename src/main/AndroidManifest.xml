@@ -19,8 +19,8 @@
     xmlns:tools="http://schemas.android.com/tools"
           package="mdm.qubit.dpc"
           tools:ignore="MissingClass"
-    android:versionCode="9037"
-    android:versionName="9.0.37">
+    android:versionCode="9039"
+    android:versionName="9.0.39">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="36"/>
 
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />

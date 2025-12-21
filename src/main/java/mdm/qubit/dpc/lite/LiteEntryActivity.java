@@ -82,12 +82,13 @@ public class LiteEntryActivity extends Activity {
   private Button mTailscaleButton;
   private boolean mqttUiInitialized = false;
   private Handler mHandler;
+  private MqttAutoStartManager mMqttAutoStartManager;
   private boolean mTailscaleBusy = false;
   private Runnable mAuthKeyCleanupRunnable;
-  private Runnable mMqttAutoStartRunnable;
-  private int mMqttAutoStartAttempts = 0;
   private EnrolAllStep mEnrolAllStep = EnrolAllStep.IDLE;
   private long mVpnWaitDeadlineMs = 0L;
+  private VpnWatcher mVpnWatcher;
+  private boolean mAuthKeyCleared = false;
 
   private final BroadcastReceiver mEnrolStateReceiver =
       new BroadcastReceiver() {
@@ -109,6 +110,10 @@ public class LiteEntryActivity extends Activity {
     LiteLauncherHider.apply(this);
     setContentView(R.layout.activity_lite_entry);
     mHandler = new Handler(Looper.getMainLooper());
+    mMqttAutoStartManager =
+        new MqttAutoStartManager(
+            this, mHandler, MQTT_AUTOSTART_RETRY_MS, MQTT_AUTOSTART_MAX_ATTEMPTS, this::isVpnUp);
+    mVpnWatcher = new VpnWatcher(mHandler, VPN_TIMEOUT_MS, VPN_POLL_INTERVAL_MS, this::isVpnUp);
     IntentFilter enrolFilter = new IntentFilter(EnrolApiClient.ACTION_ENROL_STATE_UPDATED);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       registerReceiver(mEnrolStateReceiver, enrolFilter, Context.RECEIVER_NOT_EXPORTED);
@@ -165,6 +170,7 @@ public class LiteEntryActivity extends Activity {
   @Override
   protected void onDestroy() {
     stopVpnPolling();
+    stopAuthKeyCleanupWatch();
     stopMqttAutoStart();
     unregisterMqttReceiver();
     try {
@@ -276,141 +282,30 @@ public class LiteEntryActivity extends Activity {
   }
 
   private void autoConfigureAndStartMqttAfterEnrol() {
-    stopMqttAutoStart();
-    EnrolState enrolState = new EnrolState(this);
-    String deviceId = enrolState.getDeviceId();
-    String password = enrolState.getMqttPassword();
-    if (isBlank(deviceId) || isBlank(password)) {
-      Log.w(TAG, "Enrol completed but missing MQTT creds; will retry auto-start");
-      scheduleMqttAutoStartRetry();
-      return;
-    }
-
-    LiteMqttConfig cfg = new LiteMqttConfig(this);
-    boolean changed = false;
-    if (isBlank(cfg.getUsername())) {
-      cfg.setUsername(deviceId);
-      changed = true;
-    }
-    if (isBlank(cfg.getQid())) {
-      cfg.setQid(deviceId);
-      changed = true;
-    }
-    if (isBlank(cfg.getPassword())) {
-      cfg.setPassword(password);
-      changed = true;
-    }
-
-    if (mqttUiInitialized) {
-      if (mqttUserField != null && isBlank(mqttUserField.getText().toString())) {
-        mqttUserField.setText(deviceId);
-      }
-      if (mqttQidField != null && isBlank(mqttQidField.getText().toString())) {
-        mqttQidField.setText(deviceId);
-      }
-      if (mqttPassField != null && isBlank(mqttPassField.getText().toString())) {
-        mqttPassField.setText(password);
-      }
-    }
-
-    if (changed) {
-      Log.i(TAG, "Auto-filled lite MQTT creds from enrol state");
-    }
-
-    String lastStatus = LiteMqttService.getLastStatus();
-    if ("connecting".equals(lastStatus) || "connected".equals(lastStatus)) {
-      Log.i(TAG, "MQTT already " + lastStatus + "; skipping auto-start after enrol");
-      return;
-    }
-
-    Intent startIntent = new Intent(this, LiteMqttService.class);
-    startIntent.setAction(LiteMqttService.ACTION_START);
-    startService(startIntent);
+    mMqttAutoStartManager.autoConfigureAndStartAfterEnrol(this::fillMqttFieldsIfBlank);
   }
 
   private void maybeAutoStartMqttOnResume() {
-    String lastStatus = LiteMqttService.getLastStatus();
-    if ("connecting".equals(lastStatus) || "connected".equals(lastStatus)) {
-      return;
-    }
-    EnrolState enrolState = new EnrolState(this);
-    String deviceId = enrolState.getDeviceId();
-    String password = enrolState.getMqttPassword();
-    if (isBlank(deviceId) || isBlank(password)) {
-      return;
-    }
-    if (!isVpnUp()) {
-      Log.i(TAG, "VPN not up; skip MQTT auto-start on resume");
-      return;
-    }
-
-    LiteMqttConfig cfg = new LiteMqttConfig(this);
-    boolean changed = false;
-    if (isBlank(cfg.getUsername())) {
-      cfg.setUsername(deviceId);
-      changed = true;
-    }
-    if (isBlank(cfg.getQid())) {
-      cfg.setQid(deviceId);
-      changed = true;
-    }
-    if (isBlank(cfg.getPassword())) {
-      cfg.setPassword(password);
-      changed = true;
-    }
-    if (mqttUiInitialized) {
-      if (mqttUserField != null && isBlank(mqttUserField.getText().toString())) {
-        mqttUserField.setText(deviceId);
-      }
-      if (mqttQidField != null && isBlank(mqttQidField.getText().toString())) {
-        mqttQidField.setText(deviceId);
-      }
-      if (mqttPassField != null && isBlank(mqttPassField.getText().toString())) {
-        mqttPassField.setText(password);
-      }
-    }
-    if (changed) {
-      Log.i(TAG, "Auto-filled lite MQTT creds from enrol state on resume");
-    }
-
-    Intent startIntent = new Intent(this, LiteMqttService.class);
-    startIntent.setAction(LiteMqttService.ACTION_START);
-    startService(startIntent);
+    mMqttAutoStartManager.maybeAutoStartOnResume(this::fillMqttFieldsIfBlank);
   }
 
-  private void scheduleMqttAutoStartRetry() {
-    mMqttAutoStartAttempts = 0;
-    mMqttAutoStartRunnable =
-        new Runnable() {
-          @Override
-          public void run() {
-            mMqttAutoStartAttempts++;
-            EnrolState enrolState = new EnrolState(LiteEntryActivity.this);
-            String deviceId = enrolState.getDeviceId();
-            String password = enrolState.getMqttPassword();
-            if (!isBlank(deviceId) && !isBlank(password)) {
-              Log.i(TAG, "MQTT creds available after enrol; auto-starting");
-              autoConfigureAndStartMqttAfterEnrol();
-              return;
-            }
-            if (mMqttAutoStartAttempts >= MQTT_AUTOSTART_MAX_ATTEMPTS) {
-              Log.w(TAG, "MQTT auto-start retry exhausted; creds still missing");
-              stopMqttAutoStart();
-              return;
-            }
-            mHandler.postDelayed(this, MQTT_AUTOSTART_RETRY_MS);
-          }
-        };
-    mHandler.postDelayed(mMqttAutoStartRunnable, MQTT_AUTOSTART_RETRY_MS);
+  private void fillMqttFieldsIfBlank(String username, String qid, String password) {
+    if (!mqttUiInitialized) {
+      return;
+    }
+    if (mqttUserField != null && isBlank(mqttUserField.getText().toString())) {
+      mqttUserField.setText(username);
+    }
+    if (mqttQidField != null && isBlank(mqttQidField.getText().toString())) {
+      mqttQidField.setText(qid);
+    }
+    if (mqttPassField != null && isBlank(mqttPassField.getText().toString())) {
+      mqttPassField.setText(password);
+    }
   }
 
   private void stopMqttAutoStart() {
-    if (mHandler == null || mMqttAutoStartRunnable == null) {
-      return;
-    }
-    mHandler.removeCallbacks(mMqttAutoStartRunnable);
-    mMqttAutoStartRunnable = null;
-    mMqttAutoStartAttempts = 0;
+    mMqttAutoStartManager.stopAutoStart();
   }
 
   private boolean isVpnUp() {
@@ -531,6 +426,7 @@ public class LiteEntryActivity extends Activity {
     if (mTailscaleBusy) {
       return;
     }
+    mAuthKeyCleared = false;
     mTailscaleBusy = true;
     setTailscaleButtonEnabled(false);
     DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
@@ -844,6 +740,7 @@ public class LiteEntryActivity extends Activity {
       Toast.makeText(this, R.string.tailscale_not_installed, Toast.LENGTH_SHORT).show();
       return;
     }
+    mAuthKeyCleared = false;
     Log.d(TAG, "EnrolAll start: clearing Tailscale data");
     mEnrolAllStep = EnrolAllStep.CLEARING_TAILSCALE;
     Toast.makeText(this, R.string.lite_enrol_all_clearing_tailscale, Toast.LENGTH_SHORT).show();
@@ -906,38 +803,36 @@ public class LiteEntryActivity extends Activity {
   }
 
   private void startVpnPolling() {
-    stopVpnPolling();
     if (mEnrolAllStep != EnrolAllStep.WAITING_FOR_VPN) {
       return;
     }
-    if (mVpnWaitDeadlineMs == 0L) {
-      mVpnWaitDeadlineMs = System.currentTimeMillis() + VPN_TIMEOUT_MS;
-      Toast.makeText(this, R.string.lite_enrol_all_waiting_vpn, Toast.LENGTH_SHORT).show();
-    }
-    mHandler.postDelayed(this::pollVpn, 0);
-  }
+    mVpnWaitDeadlineMs =
+        mVpnWatcher.start(
+            mVpnWaitDeadlineMs,
+            new VpnWatcher.Listener() {
+              @Override
+              public void onVpnUp() {
+                Log.d(TAG, "EnrolAll: VPN detected, proceeding");
+                clearAuthKeyAfterVpn();
+                proceedToEnrol();
+              }
 
-  private void pollVpn() {
-    if (mEnrolAllStep != EnrolAllStep.WAITING_FOR_VPN) {
-      return;
-    }
-    if (isVpnUp()) {
-      Log.d(TAG, "EnrolAll: VPN detected, proceeding");
-      clearAuthKeyAfterVpn();
-      proceedToEnrol();
-      return;
-    }
-    if (System.currentTimeMillis() > mVpnWaitDeadlineMs) {
-      mEnrolAllStep = EnrolAllStep.IDLE;
-      mVpnWaitDeadlineMs = 0L;
-      Log.w(TAG, "EnrolAll: VPN wait timeout");
-      Toast.makeText(this, R.string.lite_enrol_all_vpn_timeout, Toast.LENGTH_LONG).show();
-      updateEnrolAllUi();
-      return;
-    }
-    Log.d(TAG, "EnrolAll: VPN not up yet, retrying");
-    Toast.makeText(this, R.string.lite_enrol_all_waiting_vpn, Toast.LENGTH_SHORT).show();
-    mHandler.postDelayed(this::pollVpn, VPN_POLL_INTERVAL_MS);
+              @Override
+              public void onTimeout() {
+                mEnrolAllStep = EnrolAllStep.IDLE;
+                mVpnWaitDeadlineMs = 0L;
+                Log.w(TAG, "EnrolAll: VPN wait timeout");
+                Toast.makeText(LiteEntryActivity.this, R.string.lite_enrol_all_vpn_timeout, Toast.LENGTH_LONG)
+                    .show();
+                updateEnrolAllUi();
+              }
+
+              @Override
+              public void onWaiting() {
+                Toast.makeText(LiteEntryActivity.this, R.string.lite_enrol_all_waiting_vpn, Toast.LENGTH_SHORT)
+                    .show();
+              }
+            });
   }
 
   private void manualCheckVpn() {
@@ -951,6 +846,10 @@ public class LiteEntryActivity extends Activity {
   }
 
   private void clearAuthKeyAfterVpn() {
+    if (mAuthKeyCleared) {
+      return;
+    }
+    mAuthKeyCleared = true;
     EnrolConfig cfg = new EnrolConfig(this);
     cfg.saveTailscaleAuthKey("");
     DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
@@ -963,6 +862,7 @@ public class LiteEntryActivity extends Activity {
       bundle.putString("ControlURL", controlUrl);
       bundle.putString("AuthKey", "");
       bundle.putString("Hostname", cfg.getTailscaleHostname());
+      bundle.putBoolean("ForceEnabled", TAILSCALE_FORCE_ENABLED);
       dpm.setApplicationRestrictions(admin, TAILSCALE_PKG, bundle);
       writeTailscaleConfigFile("", cfg.getTailscaleHostname(), controlUrl);
       Log.d(TAG, "EnrolAll: AuthKey cleared after VPN up");
@@ -981,7 +881,9 @@ public class LiteEntryActivity extends Activity {
   }
 
   private void stopVpnPolling() {
-    mHandler.removeCallbacksAndMessages(null);
+    if (mVpnWatcher != null) {
+      mVpnWatcher.stop();
+    }
   }
 
   private void updateEnrolAllUi() {
