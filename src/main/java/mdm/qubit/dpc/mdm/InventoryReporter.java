@@ -4,11 +4,13 @@ import android.app.admin.DevicePolicyManager;
 import android.bluetooth.BluetoothAdapter;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -21,6 +23,7 @@ import android.os.Bundle;
 import android.os.UserManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
+import android.net.Uri;
 import mdm.qubit.dpc.DeviceAdminReceiver;
 import mdm.qubit.dpc.FileLogger;
 import java.util.List;
@@ -31,6 +34,8 @@ import org.json.JSONObject;
 
 /** Utility that collects a snapshot of installed packages for MDM acks. */
 public final class InventoryReporter {
+  // TelephonyManager.SIM_STATE_LOADED was introduced in newer SDKs; define locally for compilation.
+  private static final int SIM_STATE_LOADED = 10;
   private InventoryReporter() {}
 
   public static JSONArray collect(Context context) {
@@ -103,6 +108,19 @@ public final class InventoryReporter {
         status.put("data_state", tm.getDataState());
         status.put("sim_operator", emptyToNull(tm.getSimOperator()));
         status.put("sim_operator_name", emptyToNull(tm.getSimOperatorName()));
+        status.put("network_operator", emptyToNull(tm.getNetworkOperator()));
+        status.put("network_operator_name", emptyToNull(tm.getNetworkOperatorName()));
+        status.put("network_country_iso", emptyToNull(tm.getNetworkCountryIso()));
+        status.put("sim_country_iso", emptyToNull(tm.getSimCountryIso()));
+        status.put("is_roaming", tm.isNetworkRoaming());
+        status.put("sim_state", simStateToString(tm.getSimState()));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+          int carrierId = tm.getSimCarrierId();
+          if (carrierId != TelephonyManager.UNKNOWN_CARRIER_ID) {
+            status.put("carrier_id", carrierId);
+          }
+        }
+        appendApnInfo(context, status);
       }
       BluetoothAdapter bt = BluetoothAdapter.getDefaultAdapter();
       if (bt != null) {
@@ -147,6 +165,21 @@ public final class InventoryReporter {
             dpm.getPermittedInputMethods(admin);
         if (ime != null) {
           status.put("permitted_input_methods", new JSONArray(ime));
+        }
+        try {
+          String vpnPkg = dpm.getAlwaysOnVpnPackage(admin);
+          if (!TextUtils.isEmpty(vpnPkg)) {
+            status.put("always_on_vpn_package", vpnPkg);
+          }
+          status.put("always_on_vpn_lockdown", dpm.isAlwaysOnVpnLockdownEnabled(admin));
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Set<String> exempt = dpm.getAlwaysOnVpnLockdownWhitelist(admin);
+            if (exempt != null && !exempt.isEmpty()) {
+              status.put("always_on_vpn_exempted", new JSONArray(exempt));
+            }
+          }
+        } catch (Exception e) {
+          FileLogger.log(context, "InventoryReporter vpn status error: " + e.getMessage());
         }
       }
       UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
@@ -243,7 +276,106 @@ public final class InventoryReporter {
     return trimmed.equalsIgnoreCase("<unknown ssid>") ? null : trimmed;
   }
 
+  private static String simStateToString(int state) {
+    switch (state) {
+      case TelephonyManager.SIM_STATE_ABSENT:
+        return "absent";
+      case TelephonyManager.SIM_STATE_PIN_REQUIRED:
+        return "pin_required";
+      case TelephonyManager.SIM_STATE_PUK_REQUIRED:
+        return "puk_required";
+      case TelephonyManager.SIM_STATE_NETWORK_LOCKED:
+        return "network_locked";
+      case TelephonyManager.SIM_STATE_READY:
+        return "ready";
+      case TelephonyManager.SIM_STATE_NOT_READY:
+        return "not_ready";
+      case TelephonyManager.SIM_STATE_PERM_DISABLED:
+        return "perm_disabled";
+      case TelephonyManager.SIM_STATE_CARD_IO_ERROR:
+        return "card_io_error";
+      case TelephonyManager.SIM_STATE_CARD_RESTRICTED:
+        return "card_restricted";
+      case SIM_STATE_LOADED:
+        return "loaded";
+      case TelephonyManager.SIM_STATE_UNKNOWN:
+      default:
+        return "unknown";
+    }
+  }
+
+  private static void appendApnInfo(Context context, JSONObject status) {
+    ContentResolver cr = context.getContentResolver();
+    Cursor cursor = null;
+    Cursor pref = null;
+    boolean anyApn = false;
+    String apnError = null;
+    try {
+      Uri carriers = Uri.parse("content://telephony/carriers");
+      String[] cols = new String[] {"name", "apn", "type", "mcc", "mnc", "numeric", "current"};
+      cursor = cr.query(carriers, cols, null, null, null);
+      JSONArray list = new JSONArray();
+      if (cursor != null) {
+        while (cursor.moveToNext()) {
+          anyApn = true;
+          JSONObject apn = new JSONObject();
+          apn.put("name", emptyToNull(cursor.getString(cursor.getColumnIndex("name"))));
+          apn.put("apn", emptyToNull(cursor.getString(cursor.getColumnIndex("apn"))));
+          apn.put("type", emptyToNull(cursor.getString(cursor.getColumnIndex("type"))));
+          apn.put("mcc", emptyToNull(cursor.getString(cursor.getColumnIndex("mcc"))));
+          apn.put("mnc", emptyToNull(cursor.getString(cursor.getColumnIndex("mnc"))));
+          apn.put("numeric", emptyToNull(cursor.getString(cursor.getColumnIndex("numeric"))));
+          String current = cursor.getString(cursor.getColumnIndex("current"));
+          if (!TextUtils.isEmpty(current)) {
+            apn.put("current", "1".equals(current) || "true".equalsIgnoreCase(current));
+          }
+          list.put(apn);
+        }
+      }
+      if (list.length() > 0) {
+        status.put("apn_list", list);
+      }
+      Uri preferred = Uri.parse("content://telephony/carriers/preferapn");
+      pref = cr.query(preferred, cols, null, null, null);
+      if (pref != null && pref.moveToFirst()) {
+        anyApn = true;
+        JSONObject apn = new JSONObject();
+        apn.put("name", emptyToNull(pref.getString(pref.getColumnIndex("name"))));
+        apn.put("apn", emptyToNull(pref.getString(pref.getColumnIndex("apn"))));
+        apn.put("type", emptyToNull(pref.getString(pref.getColumnIndex("type"))));
+        apn.put("mcc", emptyToNull(pref.getString(pref.getColumnIndex("mcc"))));
+        apn.put("mnc", emptyToNull(pref.getString(pref.getColumnIndex("mnc"))));
+        apn.put("numeric", emptyToNull(pref.getString(pref.getColumnIndex("numeric"))));
+        status.put("apn_preferred", apn);
+      }
+    } catch (Exception e) {
+      apnError = e.getClass().getSimpleName();
+      FileLogger.log(context, "InventoryReporter APN query error: " + e.getMessage());
+    } finally {
+      closeQuietly(cursor);
+      closeQuietly(pref);
+      if (!anyApn && apnError != null) {
+        // Let backend know APN query failed (likely due to missing carrier permissions on non-priv builds)
+        try {
+          status.put("apn_query_error", apnError);
+        } catch (Exception ignore) {
+          // ignore
+        }
+      }
+    }
+  }
+
   private static String emptyToNull(String value) {
     return value == null || value.trim().isEmpty() ? null : value;
+  }
+
+  private static void closeQuietly(Cursor c) {
+    if (c != null) {
+      try {
+        c.close();
+      } catch (Exception ignore) {
+        // ignore
+      }
+    }
   }
 }

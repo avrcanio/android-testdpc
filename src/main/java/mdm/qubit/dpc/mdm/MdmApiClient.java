@@ -110,15 +110,44 @@ public final class MdmApiClient {
 
   public static JSONObject postInventory(Context context, JSONArray packages, String requestId)
       throws Exception {
+    return postInventory(context, packages, requestId, System.currentTimeMillis() / 1000);
+  }
+
+  public static JSONObject postInventory(
+      Context context, JSONArray packages, String requestId, long timestampSeconds)
+      throws Exception {
     if (packages == null || packages.length() == 0) {
+      return null;
+    }
+    JSONArray packagesOnly = packages;
+    JSONObject deviceStatus = null;
+    try {
+      JSONObject first = packages.optJSONObject(0);
+      if (first != null && "device_status".equals(first.optString("kind"))) {
+        deviceStatus = first;
+        JSONArray trimmed = new JSONArray();
+        for (int i = 1; i < packages.length(); i++) {
+          trimmed.put(packages.get(i));
+        }
+        if (trimmed.length() > 0) {
+          packagesOnly = trimmed;
+        }
+      }
+    } catch (Exception ignore) {
+      // best-effort extraction; fall back to original packages array
+    }
+    if (packagesOnly.length() == 0) {
       return null;
     }
     String token = new EnrolState(context).getDeviceToken();
     HttpURLConnection conn = open(context, "/inventory", "POST", token);
     JSONObject payload = new JSONObject();
     payload.put("request_id", requestId);
-    payload.put("timestamp", System.currentTimeMillis() / 1000);
-    payload.put("packages", packages);
+    payload.put("timestamp", timestampSeconds);
+    payload.put("packages", packagesOnly);
+    if (deviceStatus != null) {
+      payload.put("device_status", deviceStatus);
+    }
     payload.put("device_id", new EnrolState(context).getDeviceId());
     byte[] bytes = payload.toString().getBytes("UTF-8");
     OutputStream os = conn.getOutputStream();

@@ -53,6 +53,17 @@ adb shell run-as mdm.qubit.dpc tail -f files/provision_log.txt
 - Forced watchdog (60s): if not CONNECTED within 60s, forces reconnect (even if CONNECTING hung).
 - Heartbeat: if client not CONNECTED or `connecting=true`, skip + scheduleReconnect.
 
+## Notify and inventory refresh
+- Subscribes to `mdm/<deviceId>/notify` (QoS 1); every notify triggers inbox sync.
+- Notify payload is JSON `{ "event": "...", "payload": {...}, "ts": "..." }`.
+- If `event == "inventory.refresh"`:
+  - `request_id`: use `payload.request_id` if present, else generate `refresh-<uuid>`.
+  - `timestamp`: use `ts` if parseable to epoch seconds; fallback to current `time()/1000`.
+  - Debounce: duplicate `request_id` within 60s is ignored.
+  - Upload: POST `/mdm/inventory` with `device_id`, `request_id`, `timestamp`, `packages` (non-empty), and `device_status` (sent separately if present as first element in inventory array). Auth/headers same as other MDM calls.
+  - Response expectation: 200/201 with `{status:"accepted", package_count:N, hash:"...", duplicate:bool}`; only logged on client.
+  - Normal poll schedule is unchanged after this forced refresh.
+
 ## Change guidelines
 - Add/remove status events only via `StatusReporter`.
 - Touch MQTT tasks/flags only inside `LiteMqttController` (single executor, single source of truth).

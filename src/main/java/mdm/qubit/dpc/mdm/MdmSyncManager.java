@@ -14,19 +14,27 @@ import android.os.PersistableBundle;
 import android.content.SharedPreferences;
 import android.os.UserManager;
 import android.util.Log;
+import android.net.Uri;
+import android.telephony.data.ApnSetting;
+import android.telephony.TelephonyManager;
+import android.text.TextUtils;
+import java.lang.reflect.Method;
 import mdm.qubit.dpc.DeviceAdminReceiver;
 import mdm.qubit.dpc.EnrolState;
 import mdm.qubit.dpc.FileLogger;
 import mdm.qubit.dpc.common.PackageInstallationUtils;
 import mdm.qubit.dpc.common.Util;
 import mdm.qubit.dpc.mdm.InventoryReporter;
+import android.content.pm.PackageManager;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
+import java.net.UnknownHostException;
 import org.json.JSONException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -34,6 +42,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -183,7 +193,7 @@ public final class MdmSyncManager {
           ack.put("success", true);
           JSONArray inventoryUninstall = InventoryReporter.collect(context);
           ack.put("inventory", inventoryUninstall);
-          maybePostInventory(context, inventoryUninstall, requestId);
+          InventoryService.maybePostInventory(context, inventoryUninstall, requestId);
           break;
         case "suspend_app":
           JSONObject suspendPayload = cmd.optJSONObject("payload");
@@ -214,7 +224,7 @@ public final class MdmSyncManager {
             ack.put("success", true);
             JSONArray inventorySuspend = InventoryReporter.collect(context);
             ack.put("inventory", inventorySuspend);
-            maybePostInventory(context, inventorySuspend, requestId);
+            InventoryService.maybePostInventory(context, inventorySuspend, requestId);
           } catch (Exception e) {
             FileLogger.log(context, "MdmSync suspend_app error: " + e.getMessage());
             ack.put("success", false);
@@ -258,7 +268,7 @@ public final class MdmSyncManager {
             }
             JSONArray inventoryHide = InventoryReporter.collect(context);
             ack.put("inventory", inventoryHide);
-            maybePostInventory(context, inventoryHide, requestId);
+            InventoryService.maybePostInventory(context, inventoryHide, requestId);
           } catch (Exception e) {
             FileLogger.log(context, "MdmSync hide_app error: " + e.getMessage());
             ack.put("success", false);
@@ -437,6 +447,24 @@ public final class MdmSyncManager {
           for (java.util.Iterator<String> it = pcResult.keys(); it.hasNext(); ) {
             String key = it.next();
             ack.put(key, pcResult.get(key));
+          }
+          break;
+        case "set_override_apn":
+          JSONObject apnPayload = cmd.optJSONObject("payload");
+          JSONObject apnResult =
+              handleSetOverrideApn(context, apnPayload, requestId, ack.optString("qid", null), id);
+          for (java.util.Iterator<String> it = apnResult.keys(); it.hasNext(); ) {
+            String key = it.next();
+            ack.put(key, apnResult.get(key));
+          }
+          break;
+        case "set_always_on_vpn":
+          JSONObject vpnPayload = cmd.optJSONObject("payload");
+          JSONObject vpnResult =
+              handleSetAlwaysOnVpn(context, vpnPayload, requestId, ack.optString("qid", null), id);
+          for (java.util.Iterator<String> it = vpnResult.keys(); it.hasNext(); ) {
+            String key = it.next();
+            ack.put(key, vpnResult.get(key));
           }
           break;
         default:
@@ -775,6 +803,280 @@ public final class MdmSyncManager {
     }
   }
 
+  private static JSONObject handleSetOverrideApn(
+      Context context, JSONObject payload, String requestId, String qid, long commandId) {
+    JSONObject result = new JSONObject();
+    JSONObject meta = new JSONObject();
+    JSONArray perApn = new JSONArray();
+    boolean success = true;
+    String req = qid != null ? qid : (commandId >= 0 ? Long.toString(commandId) : requestId);
+    try {
+      if (payload == null) {
+        result.put("success", false);
+        result.put("error", "missing_payload");
+        result.put("meta", meta);
+        return result;
+      }
+      boolean enable = payload.optBoolean("enable", true);
+      boolean clearExisting = payload.optBoolean("clear_existing", false);
+      JSONArray apns = payload.optJSONArray("apns");
+      DevicePolicyManager dpm =
+          (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+      ComponentName admin = DeviceAdminReceiver.getComponentName(context);
+      if (dpm == null || admin == null) {
+        result.put("success", false);
+        result.put("error", "dpm_unavailable");
+        result.put("meta", meta);
+        return result;
+      }
+
+      if (clearExisting) {
+        try {
+          List<ApnSetting> existing = dpm.getOverrideApns(admin);
+          int removed = 0;
+          for (ApnSetting apn : existing) {
+            if (dpm.removeOverrideApn(admin, apn.getId())) {
+              removed++;
+            }
+          }
+          meta.put("cleared", removed);
+        } catch (Exception e) {
+          success = false;
+          meta.put("clear_error", e.getMessage());
+        }
+      }
+
+      int inserted = 0;
+      if (apns != null) {
+        for (int i = 0; i < apns.length(); i++) {
+          JSONObject apnObj = apns.optJSONObject(i);
+          if (apnObj == null) {
+            continue;
+          }
+          JSONObject per = new JSONObject();
+          try {
+            ApnSetting apnSetting = buildApnSetting(apnObj);
+            if (apnSetting == null) {
+              per.put("error", "invalid_apn");
+            } else {
+              int id = dpm.addOverrideApn(admin, apnSetting);
+              per.put("id", id);
+              per.put("entry_name", apnObj.optString("entry_name", null));
+              per.put("apn_name", apnObj.optString("apn_name", null));
+              per.put("operator_numeric", apnObj.optString("operator_numeric", null));
+              if (id == -1) {
+                per.put("error", "insert_failed");
+              } else {
+                inserted++;
+              }
+            }
+          } catch (Exception e) {
+            per.put("error", e.getMessage());
+            success = false;
+          }
+          perApn.put(per);
+        }
+      }
+      if (perApn.length() > 0) {
+        meta.put("apns", perApn);
+      }
+      try {
+        dpm.setOverrideApnsEnabled(admin, enable);
+        meta.put("enabled", enable);
+      } catch (Exception e) {
+        success = false;
+        meta.put("enable_error", e.getMessage());
+      }
+
+      meta.put("inserted", inserted);
+      meta.put("request_id", req);
+
+      result.put("success", success && (inserted > 0 || clearExisting || enable));
+      if (!result.optBoolean("success")) {
+        result.put("error", "partial_failure");
+      }
+      result.put("meta", meta);
+      return result;
+    } catch (Exception e) {
+      try {
+        result.put("success", false);
+        result.put("error", e.getMessage());
+        result.put("meta", meta);
+      } catch (Exception ignore) {
+        // ignore
+      }
+      return result;
+    }
+  }
+
+  private static ApnSetting buildApnSetting(JSONObject obj) throws UnknownHostException {
+    if (obj == null) {
+      return null;
+    }
+    String operator = obj.optString("operator_numeric", null);
+    String entryName = obj.optString("entry_name", null);
+    String apnName = obj.optString("apn_name", null);
+    int typeBitmask = obj.optInt("apn_type_bitmask", 0);
+    if (entryName == null || entryName.isEmpty() || apnName == null || apnName.isEmpty() || typeBitmask == 0) {
+      return null;
+    }
+    ApnSetting.Builder b = new ApnSetting.Builder();
+    b.setOperatorNumeric(operator);
+    b.setEntryName(entryName);
+    b.setApnName(apnName);
+    b.setApnTypeBitmask(typeBitmask);
+    if (obj.has("proxy")) {
+      InetAddress proxy = inetAddressOrNull(obj.optString("proxy", null));
+      b.setProxyAddress(proxy);
+    }
+    if (obj.has("proxy_port")) {
+      b.setProxyPort(obj.optInt("proxy_port", -1));
+    }
+    if (obj.has("mmsc")) {
+      String mmsc = obj.optString("mmsc", null);
+      b.setMmsc(TextUtils.isEmpty(mmsc) ? null : Uri.parse(mmsc));
+    }
+    if (obj.has("mms_proxy")) {
+      InetAddress mmsProxy = inetAddressOrNull(obj.optString("mms_proxy", null));
+      b.setMmsProxyAddress(mmsProxy);
+    }
+    if (obj.has("mms_port")) {
+      b.setMmsProxyPort(obj.optInt("mms_port", -1));
+    }
+    b.setUser(obj.optString("user", null));
+    b.setPassword(obj.optString("password", null));
+    if (obj.has("auth_type")) {
+      b.setAuthType(obj.optInt("auth_type", -1));
+    }
+    if (obj.has("protocol")) {
+      b.setProtocol(obj.optInt("protocol", -1));
+    }
+    if (obj.has("roaming_protocol")) {
+      b.setRoamingProtocol(obj.optInt("roaming_protocol", -1));
+    }
+    if (obj.has("carrier_enabled")) {
+      b.setCarrierEnabled(obj.optBoolean("carrier_enabled", true));
+    }
+    if (obj.has("network_type_bitmask")) {
+      b.setNetworkTypeBitmask(obj.optInt("network_type_bitmask", 0));
+    }
+    if (obj.has("mvno_type")) {
+      int mvnoType = obj.optInt("mvno_type", -1);
+      b.setMvnoType(mvnoType);
+      if (mvnoType != -1) {
+        String mvnoMatch = obj.optString("mvno_match_data", null);
+        if (!TextUtils.isEmpty(mvnoMatch)) {
+          setMvnoMatchDataIfAvailable(b, mvnoMatch);
+        }
+      }
+    }
+    return b.build();
+  }
+
+  // Newer SDKs expose setMvnoMatchData; invoke reflectively when available to keep backward
+  // compatibility with older compile SDKs.
+  private static void setMvnoMatchDataIfAvailable(ApnSetting.Builder builder, String data) {
+    try {
+      Method m = builder.getClass().getMethod("setMvnoMatchData", String.class);
+      m.invoke(builder, data);
+    } catch (Exception ignored) {
+      // Method not present or invocation failed; skip setting MVNO match data.
+    }
+  }
+
+  private static InetAddress inetAddressOrNull(String value) throws UnknownHostException {
+    if (TextUtils.isEmpty(value)) {
+      return null;
+    }
+    return InetAddress.getByName(value);
+  }
+
+  private static JSONObject handleSetAlwaysOnVpn(
+      Context context, JSONObject payload, String requestId, String qid, long commandId) {
+    JSONObject result = new JSONObject();
+    JSONObject meta = new JSONObject();
+    boolean success = true;
+    String req = qid != null ? qid : (commandId >= 0 ? Long.toString(commandId) : requestId);
+    try {
+      if (payload == null) {
+        result.put("success", false);
+        result.put("error", "missing_payload");
+        result.put("meta", meta);
+        return result;
+      }
+      boolean enable = payload.optBoolean("enable", true);
+      String pkg = payload.optString("package", null);
+      boolean lockdown = payload.optBoolean("lockdown", false);
+      JSONArray exemptArr = payload.optJSONArray("exempted_packages");
+      Set<String> exempt = null;
+      if (exemptArr != null && exemptArr.length() > 0) {
+        exempt = new HashSet<>();
+        for (int i = 0; i < exemptArr.length(); i++) {
+          String p = exemptArr.optString(i, null);
+          if (!TextUtils.isEmpty(p)) {
+            exempt.add(p);
+          }
+        }
+      }
+      if (enable && TextUtils.isEmpty(pkg)) {
+        result.put("success", false);
+        result.put("error", "missing_package");
+        result.put("meta", meta);
+        return result;
+      }
+
+      DevicePolicyManager dpm =
+          (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+      ComponentName admin = DeviceAdminReceiver.getComponentName(context);
+      if (dpm == null || admin == null) {
+        result.put("success", false);
+        result.put("error", "dpm_unavailable");
+        result.put("meta", meta);
+        return result;
+      }
+
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          dpm.setAlwaysOnVpnPackage(admin, enable ? pkg : null, lockdown, lockdown ? exempt : null);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+          dpm.setAlwaysOnVpnPackage(admin, enable ? pkg : null, lockdown);
+        } else {
+          result.put("success", false);
+          result.put("error", "requires_api_24");
+          result.put("meta", meta);
+          return result;
+        }
+      } catch (Exception e) {
+        success = false;
+        meta.put("apply_error", e.getMessage());
+      }
+
+      meta.put("request_id", req);
+      meta.put("enable", enable);
+      meta.put("package", enable ? pkg : JSONObject.NULL);
+      meta.put("lockdown", lockdown);
+      if (exempt != null && !exempt.isEmpty()) {
+        meta.put("exempted_packages", new JSONArray(exempt));
+      }
+
+      result.put("success", success);
+      if (!success) {
+        result.put("error", "partial_failure");
+      }
+      result.put("meta", meta);
+      return result;
+    } catch (Exception e) {
+      try {
+        result.put("success", false);
+        result.put("error", e.getMessage());
+        result.put("meta", meta);
+      } catch (Exception ignore) {
+        // ignore
+      }
+      return result;
+    }
+  }
+
   private static JSONObject handleSetPasswordPolicy(
       Context context, JSONObject payload, String requestId, String qid, long commandId) {
     JSONObject result = new JSONObject();
@@ -947,35 +1249,14 @@ public final class MdmSyncManager {
     }
   }
 
-  private static void savePasswordChangeRequest(Context context, String reqId) {
-    if (reqId == null) {
-      return;
-    }
-    SharedPreferences prefs =
-        context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
-    prefs.edit().putString(KEY_LAST_PWD_REQ_ID, reqId).apply();
-  }
-
-  private static String getPasswordChangeRequest(Context context) {
-    SharedPreferences prefs =
-        context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
-    return prefs.getString(KEY_LAST_PWD_REQ_ID, null);
-  }
-
-  private static void clearPasswordChangeRequest(Context context) {
-    SharedPreferences prefs =
-        context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
-    prefs.edit().remove(KEY_LAST_PWD_REQ_ID).apply();
-  }
-
   public static void onPasswordChanged(Context context) {
-    String reqId = getPasswordChangeRequest(context);
+    String reqId = PasswordRequestStore.get(context);
     if (reqId == null) {
       return;
     }
     try {
       MdmApiClient.postPasswordChangeState(context, reqId, true, "changed");
-      clearPasswordChangeRequest(context);
+      PasswordRequestStore.clear(context);
       FileLogger.log(context, "MdmSync password_changed reported reqId=" + reqId);
     } catch (Exception e) {
       FileLogger.log(context, "MdmSync password_changed report error: " + e.getMessage());
@@ -1024,7 +1305,7 @@ public final class MdmSyncManager {
         success = false;
         meta.put("lock_error", e.getMessage());
       }
-      savePasswordChangeRequest(context, req);
+      PasswordRequestStore.save(context, req);
       result.put("success", success);
       result.put("meta", meta);
       FileLogger.log(
@@ -1302,7 +1583,7 @@ public final class MdmSyncManager {
       if (result.optBoolean("success", false)) {
         JSONArray inventoryInstall = InventoryReporter.collect(context);
         meta.put("inventory", inventoryInstall);
-        maybePostInventory(context, inventoryInstall, requestId);
+        InventoryService.maybePostInventory(context, inventoryInstall, requestId);
       }
 
       result.put("meta", meta);
@@ -1477,19 +1758,11 @@ public final class MdmSyncManager {
 
   /** Fire-and-forget inventory upload (used after enrol). */
   public static void sendInventoryNow(Context context, String requestId) {
-    final Context app = context.getApplicationContext();
-    final String rid = requestId != null ? requestId : Long.toHexString(System.currentTimeMillis());
-    new Thread(
-            () -> {
-              try {
-                JSONArray inventory = InventoryReporter.collect(app);
-                MdmApiClient.postInventory(app, inventory, rid);
-                log(app, rid, "Inventory posted count=" + (inventory != null ? inventory.length() : 0));
-              } catch (Exception e) {
-                log(app, rid, "Inventory post failed: " + e.getMessage());
-              }
-            })
-        .start();
+    InventoryService.sendInventoryNow(context, requestId, System.currentTimeMillis() / 1000);
+  }
+
+  public static void sendInventoryNow(Context context, String requestId, long timestampSeconds) {
+    InventoryService.sendInventoryNow(context, requestId, timestampSeconds);
   }
 
   private static final class DownloadedFile {
@@ -1502,6 +1775,58 @@ public final class MdmSyncManager {
     long downloadMs;
     File file;
     long length;
+  }
+
+  private static final class InventoryService {
+    static void sendInventoryNow(Context context, String requestId, long timestampSeconds) {
+      final Context app = context.getApplicationContext();
+      final String rid = requestId != null ? requestId : Long.toHexString(System.currentTimeMillis());
+      final long ts = timestampSeconds > 0 ? timestampSeconds : System.currentTimeMillis() / 1000;
+      new Thread(
+              () -> {
+                try {
+                  JSONArray inventory = InventoryReporter.collect(app);
+                  MdmApiClient.postInventory(app, inventory, rid, ts);
+                  log(
+                      app, rid, "Inventory posted count=" + (inventory != null ? inventory.length() : 0));
+                } catch (Exception e) {
+                  log(app, rid, "Inventory post failed: " + e.getMessage());
+                }
+              })
+          .start();
+    }
+
+    static void maybePostInventory(Context context, JSONArray inventory, String requestId) {
+      if (inventory == null || inventory.length() == 0) {
+        return;
+      }
+      try {
+        MdmApiClient.postInventory(context, inventory, requestId);
+      } catch (Exception e) {
+        FileLogger.log(
+            context, "Inventory upload failed reqId=" + requestId + " err=" + e.getMessage());
+      }
+    }
+  }
+
+  private static final class PasswordRequestStore {
+    static void save(Context context, String reqId) {
+      if (reqId == null) {
+        return;
+      }
+      SharedPreferences prefs = context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
+      prefs.edit().putString(KEY_LAST_PWD_REQ_ID, reqId).apply();
+    }
+
+    static String get(Context context) {
+      SharedPreferences prefs = context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
+      return prefs.getString(KEY_LAST_PWD_REQ_ID, null);
+    }
+
+    static void clear(Context context) {
+      SharedPreferences prefs = context.getSharedPreferences(PREF_PWD, Context.MODE_PRIVATE);
+      prefs.edit().remove(KEY_LAST_PWD_REQ_ID).apply();
+    }
   }
 
   private static void log(Context context, String reqId, String msg) {
@@ -1518,14 +1843,4 @@ public final class MdmSyncManager {
     }
   }
 
-  private static void maybePostInventory(Context context, JSONArray inventory, String requestId) {
-    if (inventory == null || inventory.length() == 0) {
-      return;
-    }
-    try {
-      MdmApiClient.postInventory(context, inventory, requestId);
-    } catch (Exception e) {
-      FileLogger.log(context, "Inventory upload failed reqId=" + requestId + " err=" + e.getMessage());
-    }
-  }
 }

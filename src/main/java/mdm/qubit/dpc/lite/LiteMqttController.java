@@ -6,7 +6,10 @@ import com.hivemq.client.mqtt.MqttClientState;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5AsyncClient;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5ClientBuilder;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -15,7 +18,11 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import mdm.qubit.dpc.EnrolState;
+import mdm.qubit.dpc.mdm.InventoryReporter;
+import mdm.qubit.dpc.mdm.MdmApiClient;
 import mdm.qubit.dpc.mdm.MdmSyncManager;
 
 final class LiteMqttController {
@@ -26,6 +33,7 @@ final class LiteMqttController {
   private static final long CONNECTION_WATCHDOG_SECONDS = 20L;
   private static final long MAX_RECONNECT_DELAY_MS = 15000L;
   private static final long FORCED_RECONNECT_TIMEOUT_MS = 60000L;
+  private static final long INVENTORY_REFRESH_DEBOUNCE_SECONDS = 60L;
 
   private final LiteMqttService service;
   private final ScheduledExecutorService executor =
@@ -36,18 +44,26 @@ final class LiteMqttController {
   private final AtomicBoolean manualStop = new AtomicBoolean(false);
   private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
   private final WakeLockGuard wakeLockGuard;
+  private final HeartbeatManager heartbeatManager;
+  private final InventoryRefreshManager inventoryRefreshManager;
+  private final NotifyHandler notifyHandler;
+  private final TailscaleHealthMonitor tailscaleHealthMonitor;
 
   private Mqtt5AsyncClient client;
-  private ScheduledFuture<?> heartbeatTask;
   private ScheduledFuture<?> reconnectTask;
   private ScheduledFuture<?> connectionWatchdogTask;
   private ScheduledFuture<?> forcedReconnectTask;
+  private ScheduledFuture<?> tailscaleLogTask;
   private long connectionStartTimeMs = 0;
   private boolean publishHandlerRegistered = false;
 
   LiteMqttController(LiteMqttService service) {
     this.service = service;
     this.wakeLockGuard = new WakeLockGuard(service);
+    this.heartbeatManager = new HeartbeatManager();
+    this.inventoryRefreshManager = new InventoryRefreshManager();
+    this.notifyHandler = new NotifyHandler();
+    this.tailscaleHealthMonitor = new TailscaleHealthMonitor(service);
   }
 
   void start() {
@@ -75,9 +91,10 @@ final class LiteMqttController {
     cancelReconnectTask();
     cancelConnectionWatchdog();
     cancelForcedReconnectTask();
+    stopTailscaleLogging();
+    heartbeatManager.cancelHeartbeat();
     connecting.set(false);
     reconnectAttempts.set(0);
-    cancelHeartbeat();
     publishHandlerRegistered = false;
     Mqtt5AsyncClient clientRef = client;
     client = null;
@@ -116,6 +133,22 @@ final class LiteMqttController {
           () -> {
             wakeLockGuard.acquire(60000L);
             LiteMqttConfig config = new LiteMqttConfig(service);
+            tailscaleHealthMonitor.updateTarget(config.getHost(), config.getPort());
+            startTailscaleLogging();
+            TailscaleHealthMonitor.Health tailscaleHealth =
+                tailscaleHealthMonitor.checkAndLog("pre_connect");
+            if (!tailscaleHealth.isReadyForMqtt()) {
+              service.broadcastStatus("tailscale_wait", tailscaleHealth.summary());
+              service.logToFile(
+                  "Tailscale not ready, delaying MQTT connect. Details: "
+                      + tailscaleHealth.summary());
+              tailscaleHealthMonitor.nudgeTailscaleIfPossible();
+              connecting.set(false);
+              wakeLockGuard.releaseIfHeld();
+              scheduleReconnect();
+              return;
+            }
+            startTailscaleLogging();
             EnrolState enrolState = new EnrolState(service);
             try {
               if (client == null) {
@@ -127,12 +160,27 @@ final class LiteMqttController {
                         .serverPort(config.getPort())
                         .addDisconnectedListener(
                             ctx -> {
-                              String reason =
-                                  ctx.getCause() != null
-                                      ? ctx.getCause().getMessage()
-                                      : ctx.getSource().name();
-                              service.logToFile("MQTT disconnected: " + reason);
-                              service.broadcastStatus("disconnected", reason);
+                              String causeMsg =
+                                  ctx.getCause() != null ? ctx.getCause().getMessage() : null;
+                              String causeClass =
+                                  ctx.getCause() != null ? ctx.getCause().getClass().getSimpleName() : null;
+                              // Server disconnect details are not exposed by the current HiveMQ
+                              // client API; keep as null.
+                              String reasonCode = null;
+                              String reasonString = null;
+                              String summary =
+                                  "MQTT disconnected source="
+                                      + ctx.getSource().name()
+                                      + " reasonCode="
+                                      + (reasonCode == null ? "none" : reasonCode)
+                                      + " reason="
+                                      + (reasonString == null ? "none" : reasonString)
+                                      + " cause="
+                                      + (causeClass == null ? "none" : causeClass)
+                                      + ":"
+                                      + (causeMsg == null ? "null" : causeMsg);
+                              service.logToFile(summary);
+                              service.broadcastStatus("disconnected", summary);
                               connecting.set(false);
                               if (!destroying.get() && !manualStop.get()) {
                                 scheduleReconnect();
@@ -186,7 +234,7 @@ final class LiteMqttController {
                         service.broadcastStatus("connected", null);
                         subscribeNotify(enrolState.getDeviceId());
                         registerMessageHandler();
-                        startHeartbeat(config, enrolState.getDeviceId());
+                        heartbeatManager.startHeartbeat(config, enrolState.getDeviceId());
                         wakeLockGuard.releaseIfHeld();
                       });
             } catch (Exception e) {
@@ -259,69 +307,80 @@ final class LiteMqttController {
     }
   }
 
-  private void startHeartbeat(LiteMqttConfig config, String deviceId) {
-    if (heartbeatTask != null && !heartbeatTask.isCancelled()) {
-      return;
-    }
-    heartbeatTask =
-        executor.scheduleAtFixedRate(
-            () -> sendHeartbeat(config, deviceId),
-            HEARTBEAT_INTERVAL_SECONDS,
-            HEARTBEAT_INTERVAL_SECONDS,
-            TimeUnit.SECONDS);
-  }
+  private final class HeartbeatManager {
+    private ScheduledFuture<?> heartbeatTask;
 
-  private void sendHeartbeat(LiteMqttConfig config, String deviceId) {
-    if (manualStop.get() || destroying.get()) {
-      return;
-    }
-    if (client == null || client.getState() != MqttClientState.CONNECTED || connecting.get()) {
-      service.logToFile("Heartbeat skipped: client not connected, scheduling reconnect");
-      scheduleReconnect();
-      return;
-    }
-    wakeLockGuard.acquire(15000L);
-    String topic = heartbeatTopic(deviceId);
-    try {
-      client
-          .publishWith()
-          .topic(topic)
-          .qos(MqttQos.AT_LEAST_ONCE)
-          .payload(
-              ("{\"status\":\"ok\",\"ts\":" + System.currentTimeMillis() + "}").getBytes(
-                  StandardCharsets.UTF_8))
-          .send()
-          .whenComplete(
-              (ack, err) -> {
-                if (err != null) {
-                  Log.w(TAG, "Heartbeat publish failed", err);
-                  service.logToFile("Heartbeat failed: " + err.getMessage());
-                  service.broadcastStatus("heartbeat_error", err.getMessage());
-                  if (!destroying.get() && !manualStop.get()) {
-                    scheduleReconnect();
-                  }
-                } else {
-                  service.broadcastStatus("heartbeat", null);
-                  service.logToFile("Heartbeat ok to " + topic);
-                }
-                wakeLockGuard.releaseIfHeld();
-          });
-    } catch (Exception e) {
-      Log.w(TAG, "Heartbeat publish error", e);
-      service.broadcastStatus("heartbeat_error", e.getMessage());
-      service.logToFile("Heartbeat exception: " + e.getMessage());
-      if (!destroying.get() && !manualStop.get()) {
-        scheduleReconnect();
+    void startHeartbeat(LiteMqttConfig config, String deviceId) {
+      if (heartbeatTask != null && !heartbeatTask.isCancelled()) {
+        return;
       }
-      wakeLockGuard.releaseIfHeld();
+      heartbeatTask =
+          executor.scheduleAtFixedRate(
+              () -> sendHeartbeat(config, deviceId),
+              HEARTBEAT_INTERVAL_SECONDS,
+              HEARTBEAT_INTERVAL_SECONDS,
+              TimeUnit.SECONDS);
     }
-  }
 
-  private String heartbeatTopic(String deviceId) {
-    if (deviceId != null && !deviceId.isEmpty()) {
-      return "mdm/" + deviceId + "/state";
+    void cancelHeartbeat() {
+      if (heartbeatTask != null) {
+        heartbeatTask.cancel(true);
+        heartbeatTask = null;
+      }
     }
-    return "mdm/unknown/state";
+
+    private void sendHeartbeat(LiteMqttConfig config, String deviceId) {
+      if (manualStop.get() || destroying.get()) {
+        return;
+      }
+      if (client == null || client.getState() != MqttClientState.CONNECTED || connecting.get()) {
+        service.logToFile("Heartbeat skipped: client not connected, scheduling reconnect");
+        scheduleReconnect();
+        return;
+      }
+      wakeLockGuard.acquire(15000L);
+      String topic = heartbeatTopic(deviceId);
+      try {
+        client
+            .publishWith()
+            .topic(topic)
+            .qos(MqttQos.AT_LEAST_ONCE)
+            .payload(
+                ("{\"status\":\"ok\",\"ts\":" + System.currentTimeMillis() + "}").getBytes(
+                    StandardCharsets.UTF_8))
+            .send()
+            .whenComplete(
+                (ack, err) -> {
+                  if (err != null) {
+                    Log.w(TAG, "Heartbeat publish failed", err);
+                    service.logToFile("Heartbeat failed: " + err.getMessage());
+                    service.broadcastStatus("heartbeat_error", err.getMessage());
+                    if (!destroying.get() && !manualStop.get()) {
+                      scheduleReconnect();
+                    }
+                  } else {
+                    service.broadcastStatus("heartbeat", null);
+                    service.logToFile("Heartbeat ok to " + topic);
+                  }
+                  wakeLockGuard.releaseIfHeld();
+            });
+      } catch (Exception e) {
+        Log.w(TAG, "Heartbeat publish error", e);
+        service.broadcastStatus("heartbeat_error", e.getMessage());
+        service.logToFile("Heartbeat exception: " + e.getMessage());
+        if (!destroying.get() && !manualStop.get()) {
+          scheduleReconnect();
+        }
+        wakeLockGuard.releaseIfHeld();
+      }
+    }
+
+    private String heartbeatTopic(String deviceId) {
+      if (deviceId != null && !deviceId.isEmpty()) {
+        return "mdm/" + deviceId + "/state";
+      }
+      return "mdm/unknown/state";
+    }
   }
 
   private void subscribeNotify(String deviceId) {
@@ -361,8 +420,7 @@ final class LiteMqttController {
             publish -> {
               String topic = publish.getTopic().toString();
               if (topic.endsWith("/notify")) {
-                service.logToFile("Notify received on " + topic);
-                triggerInboxSync("notify");
+                notifyHandler.handleNotify(topic, publish);
               }
             });
     publishHandlerRegistered = true;
@@ -390,6 +448,128 @@ final class LiteMqttController {
     }
   }
 
+  private final class NotifyHandler {
+    void handleNotify(String topic, Mqtt5Publish publish) {
+      service.logToFile("Notify received on " + topic);
+      triggerInboxSync("notify");
+      processInventoryRefresh(publish);
+    }
+
+    private void processInventoryRefresh(Mqtt5Publish publish) {
+      byte[] payloadBytes = extractPayloadBytes(publish);
+      if (payloadBytes == null || payloadBytes.length == 0) {
+        return;
+      }
+      String payload = new String(payloadBytes, StandardCharsets.UTF_8);
+      JSONObject root;
+      try {
+        root = new JSONObject(payload);
+      } catch (Exception e) {
+        service.logToFile("Notify parse error: " + e.getMessage());
+        return;
+      }
+      String event = root.optString("event", "");
+      if (!"inventory.refresh".equals(event)) {
+        return;
+      }
+      JSONObject payloadObj = root.optJSONObject("payload");
+      String requestId = payloadObj != null ? payloadObj.optString("request_id", null) : null;
+      if (isBlank(requestId)) {
+        requestId = "refresh-" + UUID.randomUUID();
+      }
+      long tsSeconds = parseTimestampSeconds(root.opt("ts"));
+      if (tsSeconds <= 0) {
+        tsSeconds = System.currentTimeMillis() / 1000;
+      }
+      inventoryRefreshManager.handleInventoryRefresh(requestId, tsSeconds, payload);
+    }
+
+    private byte[] extractPayloadBytes(Mqtt5Publish publish) {
+      try {
+        ByteBuffer buffer = publish.getPayload().orElse(null);
+        if (buffer == null || !buffer.hasRemaining()) {
+          return null;
+        }
+        ByteBuffer duplicate = buffer.slice();
+        byte[] bytes = new byte[duplicate.remaining()];
+        duplicate.get(bytes);
+        return bytes;
+      } catch (Exception e) {
+        service.logToFile("Notify payload read error: " + e.getMessage());
+        return null;
+      }
+    }
+
+    private long parseTimestampSeconds(Object tsValue) {
+      if (tsValue instanceof Number) {
+        return ((Number) tsValue).longValue();
+      }
+      if (tsValue instanceof String) {
+        try {
+          return Long.parseLong(((String) tsValue).trim());
+        } catch (Exception ignore) {
+          return -1;
+        }
+      }
+      return -1;
+    }
+  }
+
+  private final class InventoryRefreshManager {
+    private String lastInventoryRefreshRequestId;
+    private long lastInventoryRefreshTimestamp = 0L;
+
+    void handleInventoryRefresh(String requestId, long tsSeconds, String payload) {
+      if (shouldSkipInventoryRefresh(requestId, tsSeconds)) {
+        service.logToFile(
+            "Inventory refresh skipped (duplicate) reqId=" + requestId + " ts=" + tsSeconds);
+        return;
+      }
+      service.logToFile(
+          "Inventory refresh requested reqId=" + requestId + " ts=" + tsSeconds + " payload=" + payload);
+      sendInventoryRefresh(requestId, tsSeconds);
+    }
+
+    private void sendInventoryRefresh(String requestId, long timestampSeconds) {
+      final long ts = timestampSeconds > 0 ? timestampSeconds : System.currentTimeMillis() / 1000;
+      wakeLockGuard.acquire(120000L);
+      new Thread(
+              () -> {
+                try {
+                  JSONArray inventory = InventoryReporter.collect(service);
+                  if (inventory == null || inventory.length() == 0) {
+                    service.logToFile(
+                        "Inventory refresh aborted: empty inventory reqId=" + requestId);
+                    return;
+                  }
+                  MdmApiClient.postInventory(service, inventory, requestId, ts);
+                  service.logToFile(
+                      "Inventory refresh posted reqId=" + requestId + " count=" + inventory.length());
+                } catch (Exception e) {
+                  Log.w(TAG, "Inventory refresh failed", e);
+                  service.logToFile(
+                      "Inventory refresh failed reqId=" + requestId + " err=" + e.getMessage());
+                } finally {
+                  wakeLockGuard.releaseIfHeld();
+                }
+              },
+              "lite-inventory-refresh")
+          .start();
+    }
+
+    private synchronized boolean shouldSkipInventoryRefresh(String requestId, long tsSeconds) {
+      long nowTs = tsSeconds > 0 ? tsSeconds : System.currentTimeMillis() / 1000;
+      if (requestId != null
+          && requestId.equals(lastInventoryRefreshRequestId)
+          && (nowTs - lastInventoryRefreshTimestamp) < INVENTORY_REFRESH_DEBOUNCE_SECONDS) {
+        return true;
+      }
+      lastInventoryRefreshRequestId = requestId;
+      lastInventoryRefreshTimestamp = nowTs;
+      return false;
+    }
+  }
+
   private void cancelReconnectTask() {
     if (reconnectTask != null) {
       reconnectTask.cancel(true);
@@ -402,6 +582,31 @@ final class LiteMqttController {
     if (reconnectTask != null) {
       reconnectTask.cancel(true);
       reconnectTask = null;
+    }
+  }
+
+  private void startTailscaleLogging() {
+    if (tailscaleLogTask != null && !tailscaleLogTask.isCancelled()) {
+      return;
+    }
+    try {
+      tailscaleLogTask =
+          executor.scheduleAtFixedRate(
+              () -> tailscaleHealthMonitor.checkAndLog("periodic"),
+              0,
+              60,
+              TimeUnit.SECONDS);
+    } catch (RejectedExecutionException e) {
+      service.logToFile("Tailscale logger rejected: executor shutdown");
+    } catch (Exception e) {
+      service.logToFile("Tailscale logger start failed: " + e.getMessage());
+    }
+  }
+
+  private void stopTailscaleLogging() {
+    if (tailscaleLogTask != null) {
+      tailscaleLogTask.cancel(true);
+      tailscaleLogTask = null;
     }
   }
 
@@ -488,13 +693,6 @@ final class LiteMqttController {
     if (forcedReconnectTask != null && !forcedReconnectTask.isCancelled()) {
       forcedReconnectTask.cancel(true);
       forcedReconnectTask = null;
-    }
-  }
-
-  private void cancelHeartbeat() {
-    if (heartbeatTask != null) {
-      heartbeatTask.cancel(true);
-      heartbeatTask = null;
     }
   }
 }
