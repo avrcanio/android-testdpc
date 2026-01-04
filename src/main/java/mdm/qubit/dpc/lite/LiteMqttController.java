@@ -192,6 +192,14 @@ final class LiteMqttController {
                 }
                 client = builder.buildAsync();
               }
+              Mqtt5AsyncClient clientRef = client;
+              MqttClientState state = clientRef != null ? clientRef.getState() : null;
+              if (state == MqttClientState.CONNECTED || state == MqttClientState.CONNECTING) {
+                service.logToFile("MQTT connect skipped: state=" + state);
+                connecting.set(false);
+                wakeLockGuard.releaseIfHeld();
+                return;
+              }
               service.broadcastStatus("connecting", null);
               String username =
                   !isBlank(config.getUsername()) ? config.getUsername() : enrolState.getDeviceId();

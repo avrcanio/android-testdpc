@@ -2,6 +2,7 @@ package mdm.qubit.dpc.lite;
 
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -49,6 +50,7 @@ public class LiteEntryActivity extends Activity {
   private static final String TAG = "LiteEntryActivity";
   private static final String STATE_STEP = "enrol_all_step";
   private static final String STATE_VPN_DEADLINE = "vpn_deadline";
+  private static final int REQ_POST_NOTIFICATIONS = 1001;
   private enum EnrolAllStep {
     IDLE,
     CLEARING_TAILSCALE,
@@ -59,7 +61,6 @@ public class LiteEntryActivity extends Activity {
   }
 
   private static final String TAILSCALE_PKG = "com.tailscale.ipn";
-  private static final boolean TAILSCALE_FORCE_ENABLED = true;
   private static final long VPN_TIMEOUT_MS = 90000L;
   private static final long VPN_POLL_INTERVAL_MS = 3000L;
   private static final long MQTT_AUTOSTART_RETRY_MS = 2000L;
@@ -109,6 +110,7 @@ public class LiteEntryActivity extends Activity {
     super.onCreate(savedInstanceState);
     LiteLauncherHider.apply(this);
     setContentView(R.layout.activity_lite_entry);
+    ensureNotificationPermission();
     mHandler = new Handler(Looper.getMainLooper());
     mMqttAutoStartManager =
         new MqttAutoStartManager(
@@ -203,6 +205,17 @@ public class LiteEntryActivity extends Activity {
   protected void onPause() {
     super.onPause();
     unregisterMqttReceiver();
+  }
+
+  private void ensureNotificationPermission() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      return;
+    }
+    if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+        != PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(
+          new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_POST_NOTIFICATIONS);
+    }
   }
 
   private void refreshFields() {
@@ -337,6 +350,7 @@ public class LiteEntryActivity extends Activity {
     if (!mqttUiInitialized || mqttStatusView == null) {
       return;
     }
+    Log.d(TAG, "MQTT UI update status=" + status + (error != null ? " error=" + error : ""));
     runOnUiThread(
         () -> {
           mqttStatusView.setText(formatMqttStatus(status, error));
@@ -539,6 +553,11 @@ public class LiteEntryActivity extends Activity {
       bundle.putString("ControlURL", controlUrl);
       bundle.putString("AuthKey", authKey);
       bundle.putString("Hostname", hostname);
+      String exitNodeId = config.getTailscaleExitNodeId();
+      if (exitNodeId != null) {
+        bundle.putString("ExitNodeID", exitNodeId);
+      }
+      bundle.putBoolean("ForceEnabled", config.isTailscaleForceEnabled());
       dpm.setApplicationRestrictions(admin, pkg, bundle);
       writeTailscaleConfigFile(authKey, hostname, controlUrl);
       Toast.makeText(this, R.string.tailscale_config_ok, Toast.LENGTH_SHORT).show();
@@ -651,6 +670,13 @@ public class LiteEntryActivity extends Activity {
                 cfg.saveTailscaleControlUrl(controlUrl);
                 cfg.saveTailscaleAuthKey(json.optString("AuthKey", cfg.getTailscaleAuthKey()));
                 cfg.saveTailscaleHostname(json.optString("Hostname", cfg.getTailscaleHostname()));
+                cfg.saveTailscaleExitNodeId(json.optString("ExitNodeID", cfg.getTailscaleExitNodeId()));
+                cfg.saveTailscaleForceEnabled(
+                    json.optBoolean("ForceEnabled", cfg.isTailscaleForceEnabled()));
+                JSONObject managedCfg = json.optJSONObject("tailscale_managed_config");
+                if (managedCfg != null) {
+                  cfg.saveTailscaleManagedConfig(managedCfg.toString());
+                }
                 runOnUiThread(
                     () -> {
                       refreshFields();
@@ -710,14 +736,18 @@ public class LiteEntryActivity extends Activity {
 
   private void writeTailscaleConfigFile(String authKey, String hostname, String controlUrl) {
     try {
-      JSONObject obj = new JSONObject();
-      obj.put("ForceEnabled", TAILSCALE_FORCE_ENABLED);
-      obj.put("PostureChecking", true);
-      obj.put("AllowIncomingConnections", true);
-      obj.put("UseTailscaleDNSSettings", true);
+      EnrolConfig cfg = new EnrolConfig(this);
+      String managedJson = cfg.getTailscaleManagedConfig();
+      JSONObject obj =
+          managedJson != null && !managedJson.isEmpty() ? new JSONObject(managedJson) : new JSONObject();
       obj.put("AuthKey", authKey);
       obj.put("Hostname", hostname);
       obj.put("ControlURL", controlUrl);
+      obj.put("ForceEnabled", cfg.isTailscaleForceEnabled());
+      String exitNodeId = cfg.getTailscaleExitNodeId();
+      if (exitNodeId != null && !exitNodeId.isEmpty()) {
+        obj.put("ExitNodeID", exitNodeId);
+      }
       try (FileOutputStream fos = openFileOutput("tailscale_config.json", MODE_PRIVATE)) {
         fos.write(obj.toString().getBytes(StandardCharsets.UTF_8));
       }
@@ -862,7 +892,11 @@ public class LiteEntryActivity extends Activity {
       bundle.putString("ControlURL", controlUrl);
       bundle.putString("AuthKey", "");
       bundle.putString("Hostname", cfg.getTailscaleHostname());
-      bundle.putBoolean("ForceEnabled", TAILSCALE_FORCE_ENABLED);
+      String exitNodeId = cfg.getTailscaleExitNodeId();
+      if (exitNodeId != null) {
+        bundle.putString("ExitNodeID", exitNodeId);
+      }
+      bundle.putBoolean("ForceEnabled", cfg.isTailscaleForceEnabled());
       dpm.setApplicationRestrictions(admin, TAILSCALE_PKG, bundle);
       writeTailscaleConfigFile("", cfg.getTailscaleHostname(), controlUrl);
       Log.d(TAG, "EnrolAll: AuthKey cleared after VPN up");

@@ -1,6 +1,7 @@
 package mdm.qubit.dpc.lite;
 
 import android.content.Intent;
+import android.util.Log;
 import mdm.qubit.dpc.FileLogger;
 
 /**
@@ -17,7 +18,9 @@ final class StatusReporter {
 
   void logToFile(String msg) {
     try {
-      FileLogger.log(service, "LiteMqttService: " + msg);
+      String line = "LiteMqttService: " + msg;
+      FileLogger.log(service, line);
+      FileLogger.logToDownload(service, "mqtt_logs.txt", line);
     } catch (Exception ignore) {
       // best-effort logging
     }
@@ -26,6 +29,8 @@ final class StatusReporter {
   void broadcastStatus(String status, String error) {
     sLastStatus = status;
     sLastError = error;
+    Log.d("LiteMqttStatus", "broadcast status=" + status + (error != null ? " error=" + error : ""));
+    LauncherIconSwitcher.apply(service, status);
     Intent intent = new Intent(LiteMqttService.ACTION_STATUS_BROADCAST);
     intent.putExtra(LiteMqttService.EXTRA_STATUS, status);
     if (error != null) {

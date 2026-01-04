@@ -52,7 +52,17 @@ class MqttAutoStartManager {
 
   void maybeAutoStartOnResume(CredentialsApplier applier) {
     String lastStatus = LiteMqttService.getLastStatus();
-    if ("connecting".equals(lastStatus) || "connected".equals(lastStatus)) {
+    if (isHealthyStatus(lastStatus)) {
+      Log.i(TAG, "MQTT status is healthy (" + lastStatus + "); skipping auto-start on resume");
+      return;
+    }
+    boolean canAutoStart =
+        lastStatus == null
+            || "disconnected".equals(lastStatus)
+            || "error".equals(lastStatus)
+            || "stopped".equals(lastStatus);
+    if (!canAutoStart) {
+      Log.i(TAG, "MQTT status is not eligible for auto-start (" + lastStatus + ")");
       return;
     }
     EnrolState enrolState = new EnrolState(context);
@@ -144,5 +154,21 @@ class MqttAutoStartManager {
 
   private static boolean isBlank(String value) {
     return value == null || value.trim().isEmpty();
+  }
+
+  private static boolean isHealthyStatus(String status) {
+    if (status == null) {
+      return false;
+    }
+    switch (status) {
+      case "connecting":
+      case "connected":
+      case "subscribed":
+      case "heartbeat":
+      case "sync":
+        return true;
+      default:
+        return false;
+    }
   }
 }

@@ -14,6 +14,9 @@ public class EnrolConfig {
   private static final String KEY_TS_CONTROL_URL = "tailscale_control_url";
   private static final String KEY_TS_AUTH_KEY = "tailscale_auth_key";
   private static final String KEY_TS_HOSTNAME = "tailscale_hostname";
+  private static final String KEY_TS_MANAGED_CONFIG = "tailscale_managed_config";
+  private static final String KEY_TS_EXIT_NODE_ID = "tailscale_exit_node_id";
+  private static final String KEY_TS_FORCE_ENABLED = "tailscale_force_enabled";
 
   private final SharedPreferences prefs;
 
@@ -75,5 +78,29 @@ public class EnrolConfig {
 
   public String getTailscaleHostname() {
     return prefs.getString(KEY_TS_HOSTNAME, null);
+  }
+
+  public void saveTailscaleManagedConfig(String json) {
+    prefs.edit().putString(KEY_TS_MANAGED_CONFIG, json).apply();
+  }
+
+  public String getTailscaleManagedConfig() {
+    return prefs.getString(KEY_TS_MANAGED_CONFIG, null);
+  }
+
+  public void saveTailscaleExitNodeId(String exitNodeId) {
+    prefs.edit().putString(KEY_TS_EXIT_NODE_ID, exitNodeId).apply();
+  }
+
+  public String getTailscaleExitNodeId() {
+    return prefs.getString(KEY_TS_EXIT_NODE_ID, null);
+  }
+
+  public void saveTailscaleForceEnabled(boolean forceEnabled) {
+    prefs.edit().putBoolean(KEY_TS_FORCE_ENABLED, forceEnabled).apply();
+  }
+
+  public boolean isTailscaleForceEnabled() {
+    return prefs.getBoolean(KEY_TS_FORCE_ENABLED, false);
   }
 }

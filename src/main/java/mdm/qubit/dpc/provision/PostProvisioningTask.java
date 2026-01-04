@@ -20,6 +20,7 @@ import static android.app.admin.DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXT
 import static android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED;
 import static mdm.qubit.dpc.DeviceAdminReceiver.getComponentName;
 
+import android.Manifest;
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.annotation.TargetApi;
@@ -84,6 +85,10 @@ public class PostProvisioningTask {
     // permissions for TestDPC.
     if (Util.SDK_INT >= VERSION_CODES.M) {
       autoGrantRequestedPermissionsToSelf();
+    }
+
+    if (Util.SDK_INT >= VERSION_CODES.TIRAMISU) {
+      grantPostNotificationPermissionToPackages();
     }
 
     // Retreive the admin extras bundle, which we can use to determine the original context for
@@ -193,6 +198,28 @@ public class PostProvisioningTask {
     }
   }
 
+  @TargetApi(VERSION_CODES.TIRAMISU)
+  private void grantPostNotificationPermissionToPackages() {
+    ComponentName adminComponentName = getComponentName(mContext);
+    String[] packages = new String[] {"com.tailscale.ipn", "mdm.qubit.dcp"};
+    for (String targetPackage : packages) {
+      if (!isPackageInstalled(targetPackage)) {
+        Log.w(TAG, "Package not installed, skipping POST_NOTIFICATIONS grant: " + targetPackage);
+        continue;
+      }
+      boolean success =
+          mDevicePolicyManager.setPermissionGrantState(
+              adminComponentName,
+              targetPackage,
+              Manifest.permission.POST_NOTIFICATIONS,
+              PERMISSION_GRANT_STATE_GRANTED);
+      Log.d(TAG, "Granting POST_NOTIFICATIONS to " + targetPackage + ", success: " + success);
+      if (!success) {
+        Log.e(TAG, "Failed to grant POST_NOTIFICATIONS to " + targetPackage);
+      }
+    }
+  }
+
   private List<String> getRuntimePermissions(PackageManager packageManager, String packageName) {
     List<String> permissions = new ArrayList<>();
     PackageInfo packageInfo;
@@ -226,5 +253,14 @@ public class PostProvisioningTask {
       Log.i(TAG, "Could not retrieve info about the permission: " + permission);
     }
     return false;
+  }
+
+  private boolean isPackageInstalled(String packageName) {
+    try {
+      mContext.getPackageManager().getPackageInfo(packageName, 0);
+      return true;
+    } catch (PackageManager.NameNotFoundException e) {
+      return false;
+    }
   }
 }

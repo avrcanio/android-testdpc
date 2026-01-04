@@ -5,7 +5,7 @@ $env:BAZEL_SH="C:\Program Files\Git\bin\bash.exe"
 .\.bazelisk\bazel.exe build //:testdpc --define variant=lite
 
 Release (lite) potpisivanje / verzija:
-- Manifest verzija trenutačno: versionCode=9049, versionName=9.0.49 (up-to-date u src/main/AndroidManifest.xml).
+- Manifest verzija trenutačno: versionCode=9054, versionName=9.0.54 (up-to-date u src/main/AndroidManifest.xml).
 - Postavi lozinke: $env:UPLOAD_KEYSTORE_PASS=G9p#sL8vQ2n!Ya5dWmR3 ; $env:UPLOAD_KEY_PASS=G9p#sL8vQ2n!Ya5dWmR3
 - Build + potpis: .\buildlite.bat (koristi upload.keystore, radi zipalign + apksigner); finalni artefakt je bazel-bin\testdpc-lite-release.apk (.idsig prisutan).
 - Provjera verzije na APK-u: C:\Users\avrca\AppData\Local\Android\Sdk\build-tools\35.0.0\aapt.exe dump badging bazel-bin\testdpc-lite-release.apk ^| Select-String version
